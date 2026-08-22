@@ -67,7 +67,9 @@ describe('condition boundaries', () => {
   test('streak-3 / streak-7 boundaries', () => {
     const s3 = ACHIEVEMENTS.find((a) => a.id === 'streak-3')!;
     const s7 = ACHIEVEMENTS.find((a) => a.id === 'streak-7')!;
-    const st = (n: number) => ({ profile: { totalXp: 0, streakDays: n, lastCompletedDay: null } });
+    const st = (n: number) => ({
+      profile: { totalXp: 0, streakDays: n, lastCompletedDay: null, achievements: [] },
+    });
     expect(s3.check(stateWith(st(2)))).toBe(false);
     expect(s3.check(stateWith(st(3)))).toBe(true);
     expect(s7.check(stateWith(st(6)))).toBe(false);
@@ -78,7 +80,7 @@ describe('condition boundaries', () => {
     const l5 = ACHIEVEMENTS.find((a) => a.id === 'level-5')!;
     const l10 = ACHIEVEMENTS.find((a) => a.id === 'level-10')!;
     const prof = (xp: number) => ({
-      profile: { totalXp: xp, streakDays: 0, lastCompletedDay: null },
+      profile: { totalXp: xp, streakDays: 0, lastCompletedDay: null, achievements: [] },
     });
     // sanity: threshold construction is exact
     expect(xpToReach(5)).toBeGreaterThan(0);
@@ -136,7 +138,7 @@ describe('evaluateAchievements', () => {
   test('unlocks every satisfied condition at once with timestamps', () => {
     const s = stateWith({
       tasks: Array.from({ length: 12 }, done),
-      profile: { totalXp: xpToReach(6), streakDays: 4, lastCompletedDay: null },
+      profile: { totalXp: xpToReach(6), streakDays: 4, lastCompletedDay: null, achievements: [] },
     });
     const res = evaluateAchievements(s, 12345);
     const ids = res.unlocked.map((u) => u.id).sort();

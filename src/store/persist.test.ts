@@ -101,4 +101,41 @@ describe('persist', () => {
     expect(loaded.dailies?.questIds).toEqual(['dq-a', 'dq-b']);
     expect(loaded.dailiesArchive.length).toBeLessThanOrEqual(30);
   });
+
+  test('v2 roundtrip preserves profile.achievements', () => {
+    const s = defaultState();
+    s.profile.achievements = [
+      { id: 'first-task', unlockedAt: 111 },
+      { id: 'streak-3', unlockedAt: 222 },
+    ];
+    saveStateAtomic(s, path);
+    const loaded = loadState(path);
+    expect(loaded.profile.achievements).toEqual([
+      { id: 'first-task', unlockedAt: 111 },
+      { id: 'streak-3', unlockedAt: 222 },
+    ]);
+  });
+
+  test('malformed achievements entries are dropped defensively', () => {
+    writeFileSync(
+      path,
+      JSON.stringify({
+        ...defaultState(),
+        profile: {
+          totalXp: 5,
+          streakDays: 0,
+          lastCompletedDay: null,
+          achievements: [
+            { id: 'first-task', unlockedAt: 7 }, // valid
+            { id: 'no-ts' }, // missing unlockedAt
+            { unlockedAt: 9 }, // missing id
+            'garbage', // not an object
+            { id: 12, unlockedAt: 3 }, // wrong id type
+          ],
+        },
+      }),
+    );
+    const loaded = loadState(path);
+    expect(loaded.profile.achievements).toEqual([{ id: 'first-task', unlockedAt: 7 }]);
+  });
 });
