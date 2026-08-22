@@ -7,6 +7,7 @@ import { render } from 'ink';
 import { App } from './app.tsx';
 import { loadState } from './store/persist.ts';
 import { exportState, importState } from './store/export.ts';
+import { dispatchCli } from './cli/handler.ts';
 import pkg from '../package.json';
 
 const NAME = pkg.name;
@@ -24,6 +25,12 @@ Flags:
                    (default: ./questline-backup-YYYY-MM-DD.json)
   --import <path>  restore state from a backup file and exit; the prior live
                    state is kept as <state>.import-bak
+
+Commands (headless):
+  add <title> [--easy|--medium|--hard]   create a task
+  list [--all]                           show open tasks (--all includes done)
+  done <list-index | task-id>            complete via the full XP pipeline
+  stats                                  level/xp bar/streak/weekly chart
 
 Interactive keys:
   j/k or arrows  move selection     enter   toggle done (XP + streak)
@@ -62,6 +69,16 @@ if (args.includes('--smoke')) {
     `smoke ok: tasks=${s.tasks.length} quests=${s.quests.length} xp=${s.profile.totalXp} streak=${s.profile.streakDays}`,
   );
   process.exit(0);
+}
+
+// Headless subcommands (add|list|done|stats) — pure fs/domain work, no ink,
+// no dbus, no raw-mode: safe for scripts and CI (SYNC-1 rule). Must precede
+// the unknown-flag check, since command words are not KNOWN_FLAGS.
+const cli = dispatchCli(args);
+if (cli) {
+  if (cli.stdout !== undefined) console.log(cli.stdout);
+  if (cli.stderr !== undefined) process.stderr.write(cli.stderr);
+  process.exit(cli.code);
 }
 
 // Backup flags are non-TTY safe: pure fs work, no ink render (SYNC-1 rule).
