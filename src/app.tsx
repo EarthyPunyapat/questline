@@ -12,6 +12,7 @@ import {
   todayDailies,
 } from './xp/daily.ts';
 import { evaluateAchievements } from './xp/achievements.ts';
+import { formatXpGain } from './xp/format.ts';
 import { levelCurve } from './xp/levels.ts';
 import { resolveController, type MediaController } from './media/controller.ts';
 import { cycleTheme } from './ui/theme.ts';
@@ -143,11 +144,12 @@ export function App(): React.ReactElement {
       next = achRes.state;
       for (const a of achRes.unlocked) messages.push(`🏆 Achievement: ${a.title}`);
 
-      // 5. notifications
+      // 5. notifications — XP line derives from the ACTUAL totalXp delta so
+      // toast always matches persisted state (S7.1.1; see xp/format.ts).
       const levelAfter = levelCurve(next.profile.totalXp).level;
       if (levelAfter > levelBefore) messages.unshift(`LEVEL UP → ${levelAfter}!`);
       const gainedXp = next.profile.totalXp - prev.profile.totalXp;
-      messages.push(`+${gainedXp} XP${mult > 1 ? ` (×${mult.toFixed(2)} streak)` : ''}`);
+      messages.push(formatXpGain(gainedXp, mult));
       setToast({ key: Date.now(), message: messages.join('  ') });
       return next;
     },

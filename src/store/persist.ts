@@ -95,8 +95,8 @@ function normalize(raw: unknown): GameState | undefined {
       .slice(-MAX_DAILY_ARCHIVE);
     out = { ...out, dailiesArchive: archive };
   }
-  // Achievements: migrateV1toV2 resets profile.achievements to [] (v1 saves
-  // never carry them) — re-attach the parsed v2 list when the save had one.
+  // Achievements: migrateV1toV2 preserves any parsed unlocks (defensive ?? []
+  // since f352ac8) — parseAchievements re-attaches the sanitized v2 list.
   const achievements = parseAchievements(pRaw.achievements);
   if (achievements) out = { ...out, profile: { ...out.profile, achievements } };
   return out;
