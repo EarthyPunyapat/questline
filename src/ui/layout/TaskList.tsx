@@ -33,6 +33,11 @@ export function TaskList({ tasks, selectedId, maxRows = 12 }: TaskListProps): Re
             <Box width={4}>
               <Text color={difficultyColor[t.difficulty]}>{difficultyLabel[t.difficulty]}</Text>
             </Box>
+            <Box width={3}>
+              <Text color={theme.muted}>
+                {t.recurrence ? (t.recurrence.freq === 'daily' ? '⟳D' : '⟳W') : ''}
+              </Text>
+            </Box>
             <Text
               color={t.status === 'done' ? theme.muted : undefined}
               strikethrough={t.status === 'done'}

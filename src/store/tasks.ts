@@ -1,6 +1,12 @@
 // Task CRUD over GameState — immutable updates; caller persists via saveStateAtomic.
 import { randomUUID } from 'node:crypto';
-import { makeTask, type Difficulty, type Task, type TaskStatus } from '../types/task.ts';
+import {
+  makeTask,
+  type Difficulty,
+  type Recurrence,
+  type Task,
+  type TaskStatus,
+} from '../types/task.ts';
 import type { GameState } from '../types/state.ts';
 
 export function addTask(
@@ -8,8 +14,9 @@ export function addTask(
   title: string,
   difficulty: Difficulty = 'medium',
   questId?: string,
+  recurrence?: Recurrence,
 ): GameState {
-  const task = makeTask(nextId(), title.trim(), difficulty, questId);
+  const task = makeTask(nextId(), title.trim(), difficulty, questId, recurrence);
   return { ...state, tasks: [...state.tasks, task] };
 }
 

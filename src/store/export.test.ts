@@ -127,7 +127,7 @@ describe('importState', () => {
     saveStateAtomic(seededState(), live);
     const cases: unknown[] = [
       { hello: 'world' }, // no version
-      { ...seededState(), version: 3 }, // future version
+      { ...seededState(), version: 4 }, // future version
       { ...seededState(), tasks: 'not-an-array' }, // tasks not array
       { ...seededState(), tasks: [{ id: 't-1' }] }, // invalid task element
       { ...seededState(), profile: {} }, // missing totalXp
@@ -162,7 +162,7 @@ describe('importState', () => {
     };
     writeFileSync(backupFile, JSON.stringify(v1));
     const res = importState(backupFile, live);
-    expect(res.imported.version).toBe(2);
+    expect(res.imported.version).toBe(3);
     expect(res.imported.dailies).toBeNull();
     expect(res.imported.dailiesArchive).toEqual([]);
     expect(res.imported.tasks[0]?.title).toBe('legacy');

@@ -62,10 +62,33 @@ export function isDailySetComplete(set: DailyQuestSet, state: GameState): boolea
   });
 }
 
+/** Local weekday number for a 'YYYY-MM-DD' date (0=Sun..6=Sat). */
+function weekdayOf(dateISO: string): number {
+  return new Date(`${dateISO}T00:00:00`).getDay();
+}
+
+/**
+ * v3 recurring rollover, pure per-task rule:
+ * - `daily` → any stale completion resets to todo on a new day.
+ * - `weekly` → resets only when the new day matches one of `weekdays`.
+ * Non-recurring / already-todo tasks pass through untouched.
+ */
+export function rollRecurringTask(t: Task, todayISO: string): Task {
+  const rec = t.recurrence;
+  if (!rec || t.status !== 'done') return t;
+  const reset = { ...t, status: 'todo' as const, completedAt: undefined };
+  if (rec.freq === 'daily') return reset;
+  if (rec.freq === 'weekly' && (rec.weekdays ?? []).includes(weekdayOf(todayISO))) {
+    return reset;
+  }
+  return t;
+}
+
 /**
  * Boot-time rollover: idempotent for today. On a new day it archives yesterday's
- * incomplete set (capped archive), clears old daily tasks off the board, and
- * generates a fresh deterministic set for `todayISO`.
+ * incomplete set (capped archive), clears old daily tasks off the board,
+ * resets recurring tasks that are due again, and generates a fresh
+ * deterministic set for `todayISO`. Streak-safe: profile is never touched.
  */
 export function ensureDailySet(state: GameState, todayISO: string): GameState {
   if (state.dailies?.dateISO === todayISO) return state;
@@ -81,9 +104,12 @@ export function ensureDailySet(state: GameState, todayISO: string): GameState {
     if (missed > 0) archive.push({ dateISO: prev.dateISO, missedCount: missed });
   }
 
-  // 2. Fresh deterministic set for the new day.
+  // 2. Fresh deterministic set for the new day; recurring regular tasks that
+  // are due again flip back to todo (streak-safe — profile untouched).
   const templates = pickDailySet(todayISO);
-  const tasks = state.tasks.filter((t) => !t.isDaily);
+  const tasks = state.tasks
+    .filter((t) => !t.isDaily)
+    .map((t) => rollRecurringTask(t, todayISO));
   const created = templates.map((tpl) => ({
     ...makeTask(makeId('dq'), tpl.title, tpl.difficulty),
     isDaily: true,

@@ -11,6 +11,7 @@ import { loadState, saveStateAtomic, statePath } from './persist.ts';
 import { isValidTask } from '../types/task.ts';
 import {
   migrateV1toV2,
+  migrateV2toV3,
   type DailyQuestSet,
   type GameState,
   type MissedDailyRecord,
@@ -64,10 +65,10 @@ export function parseBackup(raw: unknown): ParseBackupResult {
     return { ok: false, reason: 'top-level value is not a JSON object' };
   }
   const r = raw as Record<string, unknown>;
-  if (r.version !== 1 && r.version !== 2) {
+  if (r.version !== 1 && r.version !== 2 && r.version !== 3) {
     return {
       ok: false,
-      reason: `unsupported version ${JSON.stringify(r.version) ?? String(r.version)} (expected 1 or 2)`,
+      reason: `unsupported version ${JSON.stringify(r.version) ?? String(r.version)} (expected 1, 2 or 3)`,
     };
   }
   if (!Array.isArray(r.tasks)) {
@@ -122,10 +123,12 @@ export function parseBackup(raw: unknown): ParseBackupResult {
 
   let out: GameState;
   if (r.version === 1) {
-    out = migrateV1toV2({ version: 1, tasks, quests, profile, completedQuestIds });
+    out = migrateV2toV3(
+      migrateV1toV2({ version: 1, tasks, quests, profile, completedQuestIds }),
+    );
     out = { ...out, profile: { ...out.profile, ...parseAchievements(pRaw.achievements) } };
   } else {
-    out = {
+    out = migrateV2toV3({
       version: 2,
       tasks,
       quests,
@@ -133,7 +136,7 @@ export function parseBackup(raw: unknown): ParseBackupResult {
       completedQuestIds,
       dailies: parseDailies(r.dailies),
       dailiesArchive: parseDailiesArchive(r.dailiesArchive),
-    };
+    });
   }
   return { ok: true, state: out };
 }

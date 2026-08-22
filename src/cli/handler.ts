@@ -10,6 +10,7 @@ import { advanceStreak, localDateStr, streakMultiplier } from '../xp/streaks.ts'
 import { awardXp } from '../xp/engine.ts';
 import { awardQuestIfComplete } from '../xp/quests.ts';
 import { awardDailyBonusIfComplete, ensureDailySet } from '../xp/daily.ts';
+import { applyRecurrenceRollover } from '../xp/recurrence.ts';
 import { evaluateAchievements } from '../xp/achievements.ts';
 import { levelCurve } from '../xp/levels.ts';
 import { weeklyXp } from '../views/stats.ts';
@@ -48,7 +49,9 @@ export function dispatchCli(argv: readonly string[]): CliOutcome | undefined {
 /** Mirrors App boot (app.tsx): roll today's daily set, persisting a rollover at once. */
 function bootState(): GameState {
   const loaded = loadState();
-  const next = ensureDailySet(loaded, localDateStr());
+  const today = localDateStr();
+  // Same composition as the TUI boot (app.tsx): dailies + recurrence rollover.
+  let next = applyRecurrenceRollover(ensureDailySet(loaded, today), today);
   if (next !== loaded) saveStateAtomic(next, statePath());
   return next;
 }

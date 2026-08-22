@@ -11,10 +11,16 @@ import {
   ensureDailySet,
   todayDailies,
 } from './xp/daily.ts';
+import { applyRecurrenceRollover } from './xp/recurrence.ts';
 import { evaluateAchievements } from './xp/achievements.ts';
 import { formatXpGain } from './xp/format.ts';
 import { levelCurve } from './xp/levels.ts';
 import { resolveController, type MediaController } from './media/controller.ts';
+import {
+  createMediaSession,
+  type ActiveMediaSession,
+  type PlayerChoice,
+} from './media/session.ts';
 import { cycleTheme } from './ui/theme.ts';
 import { Header } from './ui/layout/Header.tsx';
 import { TaskList } from './ui/layout/TaskList.tsx';
@@ -35,7 +41,10 @@ export function App(): React.ReactElement {
   // survive even if the user quits idle.
   const [state, setState] = useState(() => {
     const loaded = loadState();
-    const next = ensureDailySet(loaded, localDateStr());
+    const today = localDateStr();
+    // v3: roll dailies AND reopen recurring tasks whose window elapsed.
+    let next = ensureDailySet(loaded, today);
+    next = applyRecurrenceRollover(next, today);
     if (next !== loaded) {
       try {
         saveStateAtomic(next, statePath());
@@ -58,6 +67,10 @@ export function App(): React.ReactElement {
   const [player, setPlayer] = useState<PlayerSnapshot | null>(null);
   const [controller, setController] = useState<MediaController | null>(null);
   const playerBusRef = React.useRef<string | null>(null);
+  // T8.3: multi-player session wraps the raw controller (tab switching).
+  const mediaRef = React.useRef<ActiveMediaSession | null>(null);
+  const [players, setPlayers] = useState<readonly PlayerChoice[]>([]);
+  const [activeLabel, setActiveLabel] = useState<string | null>(null);
 
   // M3: resolve a media controller once, then poll snapshots (1s — cheap busctl/dbus reads).
   useEffect(() => {
@@ -67,14 +80,20 @@ export function App(): React.ReactElement {
       if (!ctl) {
         ctl = await resolveController();
         if (alive) setController(ctl);
+        if (ctl) {
+          const media = createMediaSession(ctl);
+          mediaRef.current = media;
+          await media.autoPick(); // default stays auto-first (T8.2 semantics)
+        }
       }
-      if (!ctl || !alive) return;
-      const players = await ctl.listPlayers();
-      playerBusRef.current = players[0] ?? null;
-      const snap = players[0] ? await ctl.snapshot(players[0]) : null;
+      const media = mediaRef.current;
+      if (!ctl || !media || !alive) return;
+      const snap = await media.snapshotActive();
       if (alive) {
         setPlayer(snap);
-        if (!snap) playerBusRef.current = null;
+        setPlayers(media.players);
+        setActiveLabel(media.activeLabel);
+        playerBusRef.current = media.activeName;
       }
     };
     void tick();
@@ -205,14 +224,20 @@ export function App(): React.ReactElement {
         setShowStats(false);
         return;
       }
+      // T8.3: tab cycles between visible players (>1 only; sticky choice).
+      if (key.tab && mediaRef.current && players.length > 1) {
+        const media = mediaRef.current;
+        const list = [...players];
+        const i = list.findIndex((p) => p.name === media.activeName);
+        const next = list[(i + 1 + list.length) % list.length]!;
+        void media.switchTo(next.name);
+        return;
+      }
       // M3 transport keys (only when a live player is known)
       if (controller && player) {
-        const bus = playerBusRef.current;
-        if (bus) {
-          if (input === ' ') return void controller.send(bus, 'playPause');
-          if (input === 'n') return void controller.send(bus, 'next');
-          if (input === 'b') return void controller.send(bus, 'prev');
-        }
+        if (input === ' ') return void mediaRef.current?.send('playPause');
+        if (input === 'n') return void mediaRef.current?.send('next');
+        if (input === 'b') return void mediaRef.current?.send('prev');
       }
     },
     { isActive: mode === 'normal' },
@@ -242,7 +267,7 @@ export function App(): React.ReactElement {
             </Box>
             <TaskList tasks={regularTasks} selectedId={selectedId} />
           </Box>
-          <NowPlaying player={player} />
+          <NowPlaying player={player} players={players} activeLabel={activeLabel} />
         </Box>
       )}
       {toast && (
@@ -252,10 +277,10 @@ export function App(): React.ReactElement {
         <HelpOverlay onDone={() => setMode('normal')} />
       ) : mode === 'adding' ? (
         <AddTaskModal
-          onSubmit={(title, difficulty: Difficulty) => {
+          onSubmit={(title, difficulty: Difficulty, recurrence) => {
             // Select from the NEXT state — the pre-add `state` closure would
             // never contain the new task (SYNC-2).
-            const next = addTask(state, title, difficulty);
+            const next = addTask(state, title, difficulty, undefined, recurrence);
             commit(next);
             setMode('normal');
             setSelectedId(sortedForDisplay(next.tasks).at(-1)?.id ?? undefined);

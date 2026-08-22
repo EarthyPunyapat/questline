@@ -37,7 +37,7 @@ export interface MissedDailyRecord {
 }
 
 export interface GameState {
-  version: 2;
+  version: 3;
   tasks: Task[];
   quests: Quest[];
   profile: Profile;
@@ -52,7 +52,7 @@ export interface GameState {
 export const MAX_DAILY_ARCHIVE = 30;
 
 export const DEFAULT_STATE: GameState = {
-  version: 2,
+  version: 3,
   tasks: [],
   quests: [],
   profile: { totalXp: 0, streakDays: 0, lastCompletedDay: null, achievements: [] },
@@ -67,9 +67,12 @@ export interface GameStateV1
   version: 1;
 }
 
+/** v2 shape (dailies, pre-recurrence). */
+export type GameStateV2 = Omit<GameState, 'version'> & { version: 2 };
+
 /** Upgrade a v1 save to v2: fresh empty dailies fields, everything else kept.
  * Achievements are preserved when present (defensive default for odd inputs). */
-export function migrateV1toV2(v1: GameStateV1): GameState {
+export function migrateV1toV2(v1: GameStateV1): GameStateV2 {
   return {
     ...v1,
     version: 2,
@@ -77,4 +80,11 @@ export function migrateV1toV2(v1: GameStateV1): GameState {
     dailiesArchive: [],
     profile: { ...v1.profile, achievements: v1.profile.achievements ?? [] },
   };
+}
+
+/** Upgrade a v2 save to v3 (recurrence): pure re-version — `recurrence` is
+ * optional on Task, so absent fields need no transform. Every v2 field,
+ * including profile.achievements and the dailies archive, is preserved. */
+export function migrateV2toV3(v2: GameStateV2): GameState {
+  return { ...v2, version: 3 };
 }

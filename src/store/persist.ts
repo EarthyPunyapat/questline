@@ -18,10 +18,33 @@ import {
   DEFAULT_STATE,
   MAX_DAILY_ARCHIVE,
   migrateV1toV2,
+  migrateV2toV3,
   type DailyQuestSet,
   type GameState,
   type MissedDailyRecord,
 } from '../types/state.ts';
+import type { Recurrence, Task } from '../types/task.ts';
+
+/** Defensive recurrence sanitizer (v3): keep well-formed schedules, drop
+ * malformed ones rather than rejecting the whole save. */
+function sanitizeRecurrence(t: Task): Task {
+  const rec: unknown = t.recurrence;
+  if (rec === undefined) return t;
+  if (typeof rec !== 'object' || rec === null) return { ...t, recurrence: undefined };
+  const r = rec as Record<string, unknown>;
+  if (r.freq === 'daily') return { ...t, recurrence: { freq: 'daily' } };
+  if (r.freq === 'weekly' && Array.isArray(r.weekdays)) {
+    const weekdays = [
+      ...new Set(
+        r.weekdays.filter((n): n is number => Number.isInteger(n) && n >= 0 && n <= 6),
+      ),
+    ].sort((a, b) => a - b);
+    if (weekdays.length > 0) {
+      return { ...t, recurrence: { freq: 'weekly', weekdays } as Recurrence };
+    }
+  }
+  return { ...t, recurrence: undefined };
+}
 
 export { DEFAULT_STATE };
 
@@ -73,14 +96,18 @@ function normalize(raw: unknown): GameState | undefined {
   const completedQuestIds = Array.isArray(cqiRaw)
     ? cqiRaw.filter((id): id is string => typeof id === 'string')
     : [];
-  // v1→v2 migration: legacy saves lack dailies fields → fresh empties.
-  let out = migrateV1toV2({
-    version: 1,
-    tasks: clone(r.tasks as GameState['tasks']),
-    quests: clone(r.quests as GameState['quests']),
-    profile,
-    completedQuestIds,
-  });
+  // v1→v2→v3 migration chain: legacy saves gain dailies fields then re-version
+  // for recurrence (v3 adds only the optional Task.recurrence field).
+  let out: GameState = migrateV2toV3(
+    migrateV1toV2({
+      version: 1,
+      tasks: clone(r.tasks as GameState['tasks']),
+      quests: clone(r.quests as GameState['quests']),
+      profile,
+      completedQuestIds,
+    }),
+  );
+  out = { ...out, tasks: out.tasks.map(sanitizeRecurrence) };
   const dailies = parseDailies(r.dailies);
   if (dailies) out = { ...out, dailies };
   if (Array.isArray(r.dailiesArchive)) {

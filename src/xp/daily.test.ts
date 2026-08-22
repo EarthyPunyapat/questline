@@ -10,6 +10,7 @@ import {
   ensureDailySet,
   isDailySetComplete,
   pickDailySet,
+  rollRecurringTask,
   todayDailies,
 } from './daily.ts';
 
@@ -181,5 +182,99 @@ describe('awardDailyBonusIfComplete', () => {
     expect(v2.dailiesArchive).toEqual([]);
     expect(v2.profile.totalXp).toBe(5);
     expect(v2.tasks[0]?.title).toBe('old');
+  });
+});
+
+describe('v3 recurring rollover', () => {
+  const ms = (dateISO: string, h = 12) => new Date(`${dateISO}T${String(h).padStart(2, '0')}:00:00`).getTime();
+
+  function stateWith(tasks: GameState['tasks'], dateISO: string): GameState {
+    return {
+      ...defaultState(),
+      tasks,
+      dailies: { dateISO, questIds: [], completedAll: false },
+    };
+  }
+
+  test('rollRecurringTask: daily resets when done; todo/non-recurring pass through', () => {
+    const doneDaily = {
+      ...makeTask('t-r1', 'stretch', 'easy'),
+      recurrence: { freq: 'daily' as const },
+      status: 'done' as const,
+      completedAt: ms(D1, 23),
+    };
+    const rolled = rollRecurringTask(doneDaily, D2);
+    expect(rolled.status).toBe('todo');
+    expect(rolled.completedAt).toBeUndefined();
+    expect(rolled.recurrence).toEqual({ freq: 'daily' }); // schedule kept
+
+    const todo = makeTask('t-r2', 'already open', 'easy');
+    expect(rollRecurringTask(todo, D2)).toBe(todo);
+    const plainDone = { ...makeTask('t-p', 'one-shot', 'easy'), status: 'done' as const, completedAt: 1 };
+    expect(rollRecurringTask(plainDone, D2)).toBe(plainDone);
+  });
+
+  test('weekly resets only on a matching weekday (midnight boundary)', () => {
+    // D2 = 2026-08-23 is a Sunday (dow 0)
+    const mk = () => ({
+      ...makeTask('t-w', 'sunday review', 'medium'),
+      recurrence: { freq: 'weekly' as const, weekdays: [0] },
+      status: 'done' as const,
+      completedAt: ms(D1, 23),
+    });
+    // Sat 23:59 completion rolls over INTO Sunday → due again
+    expect(rollRecurringTask(mk(), D2).status).toBe('todo');
+    // Same done task rolling into Monday (dow 1, not listed) stays done
+    expect(rollRecurringTask(mk(), '2026-08-24').status).toBe('done');
+    // Empty weekdays never matches
+    expect(
+      rollRecurringTask(
+        { ...mk(), recurrence: { freq: 'weekly', weekdays: [] } },
+        D2,
+      ).status,
+    ).toBe('done');
+  });
+
+  test('ensureDailySet applies rollover on day change; profile untouched (streak-safe)', () => {
+    const recurred = {
+      ...makeTask('t-r', 'daily chore', 'easy'),
+      recurrence: { freq: 'daily' as const },
+      status: 'done' as const,
+      completedAt: ms(D1),
+    };
+    const before = stateWith([recurred], D1);
+    before.profile = { ...before.profile, streakDays: 4, lastCompletedDay: D1 };
+
+    const next = ensureDailySet(before, D2);
+    const t = next.tasks.find((x) => x.id === 't-r');
+    expect(t?.status).toBe('todo');
+    expect(t?.completedAt).toBeUndefined();
+    // streak safety: profile byte-identical
+    expect(next.profile).toEqual(before.profile);
+    // fresh daily set generated
+    expect(next.dailies?.dateISO).toBe(D2);
+    expect(next.tasks.filter((x) => x.isDaily)).toHaveLength(DAILY_SET_SIZE);
+  });
+
+  test('same-day boot is a no-op (no double reset)', () => {
+    const recurred = {
+      ...makeTask('t-r', 'daily chore', 'easy'),
+      recurrence: { freq: 'daily' as const },
+      status: 'done' as const,
+      completedAt: ms(D2),
+    };
+    const s = stateWith([recurred], D2);
+    expect(ensureDailySet(s, D2)).toBe(s);
+  });
+
+  test('multi-day gap (app closed over several midnights) still resets stale dones', () => {
+    const recurred = {
+      ...makeTask('t-r', 'daily chore', 'easy'),
+      recurrence: { freq: 'daily' as const },
+      status: 'done' as const,
+      completedAt: ms('2026-08-20'),
+    };
+    const next = ensureDailySet(stateWith([recurred], '2026-08-20'), '2026-08-25');
+    expect(next.tasks.find((x) => x.id === 't-r')?.status).toBe('todo');
   });
 });

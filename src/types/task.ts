@@ -15,6 +15,13 @@ export const DIFFICULTIES: readonly Difficulty[] = ['easy', 'medium', 'hard'] as
 
 export type TaskStatus = 'todo' | 'done';
 
+/** Recurring schedule (v3). `daily` resets every day; `weekly` resets only on
+ * the listed weekdays (0=Sun..6=Sat, non-empty). */
+export interface Recurrence {
+  freq: 'daily' | 'weekly';
+  weekdays?: number[];
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -27,6 +34,8 @@ export interface Task {
   questId?: string;
   /** True for generated daily-quest tasks (v2 dailies live in state.tasks). */
   isDaily?: boolean;
+  /** Optional repeat schedule (v3); absent = one-shot task. */
+  recurrence?: Recurrence;
 }
 
 /** Short unique id: `<prefix>-<8 hex>`. */
@@ -41,6 +50,7 @@ export function makeTask(
   title: string,
   difficulty: Difficulty,
   questId?: string,
+  recurrence?: Recurrence,
 ): Task {
   const task: Task = {
     id,
@@ -51,6 +61,7 @@ export function makeTask(
     completedAt: undefined,
   };
   if (questId !== undefined && questId !== '') task.questId = questId;
+  if (recurrence !== undefined) task.recurrence = recurrence;
   return task;
 }
 
