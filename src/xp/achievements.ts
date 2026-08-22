@@ -86,7 +86,7 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = [
   {
     id: 'early-bird',
     title: 'Early Bird',
-    desc: 'Complete a task between 05:00 and 07:59',
+    desc: 'Complete a task before 8 AM',
     check: (s) => completedHour(s, (h) => h >= 5 && h < 8),
   },
 ];
