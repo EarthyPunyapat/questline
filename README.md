@@ -20,6 +20,27 @@ completion bonuses — and a live MPRIS music widget keeps the soundtrack going.
 - Linux with a systemd user session (for D-Bus/MPRIS)
 - [bun](https://bun.sh) ≥ 1.4 (runtime + test), or Node ≥ 22 via the compiled binary
 
+## Install
+
+Build first, then install a symlink into `~/.local/bin` so `questline` runs from anywhere:
+
+```bash
+bun install
+bun run build        # required once: produces dist/questline
+bun run install      # symlink → ~/.local/bin/questline (idempotent)
+```
+
+Then launch from any directory:
+
+```bash
+questline            # or ./dist/questline without installing
+```
+
+If `~/.local/bin` is not on your `PATH`, the installer prints an
+`export PATH="$HOME/.local/bin:$PATH"` hint to add to your shell profile.
+
+Current release: **v0.1.0** (git tag).
+
 ## Run
 
 ```bash
