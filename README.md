@@ -4,6 +4,9 @@ A gamified terminal life-tracker: turn your todo list into an RPG.
 Tasks award XP by difficulty, day-streaks multiply gains, quest chains pay
 completion bonuses — and a live MPRIS music widget keeps the soundtrack going.
 
+<!-- CI badge: replace OWNER/REPO with your GitHub slug once the repo is pushed -->
+[![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/REPO/actions/workflows/ci.yml)
+
 ![demo](docs/demo.gif)
 
 ## Features
@@ -56,6 +59,14 @@ bunx tsc --noEmit    # strict typecheck
 bun run build        # single-file binary → dist/questline
 ./dist/questline --version
 ```
+
+## CI
+
+Every push and pull request runs [.github/workflows/ci.yml](.github/workflows/ci.yml)
+on GitHub Actions (ubuntu-latest, bun 1.4.0): frozen-lockfile install → `bun test` →
+`bunx tsc --noEmit` → compiled build + `--version` smoke — the exact same gates as
+the local commands above, so a green badge means the tree passes locally-equivalent
+checks.
 
 ## Keymap
 
