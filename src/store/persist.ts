@@ -57,7 +57,7 @@ function normalize(raw: unknown): GameState | undefined {
         : 0,
     lastCompletedDay:
       typeof pRaw.lastCompletedDay === 'string' ? pRaw.lastCompletedDay : null,
-    // Older saves predate achievements → default to [].
+    // Older saves predate achievements → default to []; malformed rows dropped.
     achievements: Array.isArray(pRaw.achievements)
       ? pRaw.achievements.filter(
           (a): a is { id: string; unlockedAt: number } =>
@@ -95,7 +95,25 @@ function normalize(raw: unknown): GameState | undefined {
       .slice(-MAX_DAILY_ARCHIVE);
     out = { ...out, dailiesArchive: archive };
   }
+  // Achievements: migrateV1toV2 resets profile.achievements to [] (v1 saves
+  // never carry them) — re-attach the parsed v2 list when the save had one.
+  const achievements = parseAchievements(pRaw.achievements);
+  if (achievements) out = { ...out, profile: { ...out.profile, achievements } };
   return out;
+}
+
+/** Defensive achievements reader; undefined when absent/invalid container. */
+function parseAchievements(
+  raw: unknown,
+): { id: string; unlockedAt: number }[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  return raw.filter(
+    (a): a is { id: string; unlockedAt: number } =>
+      typeof a === 'object' &&
+      a !== null &&
+      typeof (a as Record<string, unknown>).id === 'string' &&
+      typeof (a as Record<string, unknown>).unlockedAt === 'number',
+  );
 }
 
 /** Defensive v2 daily-set reader; returns null for missing/invalid shapes. */
