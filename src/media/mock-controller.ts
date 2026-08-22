@@ -1,9 +1,16 @@
 // In-memory MediaController for tests + offline UI development. Zero live bus calls.
-import type { MediaController, PlayerSnapshot, TransportCmd } from './controller.ts';
+import type {
+  MediaController,
+  PlayerSnapshot,
+  TransportCaps,
+  TransportCmd,
+} from './controller.ts';
+import { DEFAULT_CAPS } from './controller.ts';
 
 export class MockMediaController implements MediaController {
   players: string[];
   private snapshots: Map<string, PlayerSnapshot> = new Map();
+  private caps: Map<string, TransportCaps> = new Map();
   private sent: Array<{ busName: string; cmd: TransportCmd }> = [];
 
   constructor(players: string[] = ['org.mpris.MediaPlayer2.firefox.instance_1_168']) {
@@ -37,6 +44,16 @@ export class MockMediaController implements MediaController {
   /** Test helper: assert on delivered transport commands. */
   get commands(): ReadonlyArray<{ busName: string; cmd: TransportCmd }> {
     return this.sent;
+  }
+
+  /** Can* probe (T8.2): defaults to all-true until setCapabilities patches a player. */
+  capabilities(busName: string): Promise<TransportCaps | null> {
+    return Promise.resolve(this.caps.get(busName) ?? DEFAULT_CAPS);
+  }
+
+  /** Test/dev helper: restrict a player's Can* flags to exercise the guard. */
+  setCapabilities(busName: string, patch: Partial<Omit<TransportCaps, never>>): void {
+    this.caps.set(busName, { ...(this.caps.get(busName) ?? DEFAULT_CAPS), ...patch });
   }
 
   /** Test/dev helper: mutate state like a real player would. */

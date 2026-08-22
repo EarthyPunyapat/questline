@@ -18,6 +18,22 @@ export interface PlayerSnapshot {
 
 export type TransportCmd = 'playPause' | 'next' | 'prev';
 
+/** MPRIS Can* properties for one player (T8.2). Unreadable props are treated
+ * as permissive (true): matches the historical blind-send behavior. */
+export interface TransportCaps {
+  canPlay: boolean;
+  canPause: boolean;
+  canGoNext: boolean;
+  canGoPrev: boolean;
+}
+
+export const DEFAULT_CAPS: TransportCaps = {
+  canPlay: true,
+  canPause: true,
+  canGoNext: true,
+  canGoPrev: true,
+};
+
 export interface MediaController {
   /** Bus names of live MPRIS players (may be empty). */
   listPlayers(): Promise<string[]>;
@@ -25,6 +41,8 @@ export interface MediaController {
   snapshot(busName: string): Promise<PlayerSnapshot | null>;
   /** Fire a transport command; resolves when the call was delivered. */
   send(busName: string, cmd: TransportCmd): Promise<void>;
+  /** Optional Can* probe per player (T8.2). null/absent = use DEFAULT_CAPS. */
+  capabilities?(busName: string): Promise<TransportCaps | null>;
 }
 
 /** Runtime selection: probe BOTH backends and prefer the one that can

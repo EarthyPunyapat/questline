@@ -1,7 +1,13 @@
 // Native MPRIS controller via @homebridge/dbus-native (lean contract).
 import dbusNative from '@homebridge/dbus-native';
-import type { MediaController, PlayerSnapshot, TransportCmd } from './controller.ts';
-import { identityFromBusName, mapMetadata, parseMprisPlayers, parseStatus } from './mpris.ts';
+import type {
+  MediaController,
+  PlayerSnapshot,
+  TransportCaps,
+  TransportCmd,
+} from './controller.ts';
+import { DEFAULT_CAPS } from './controller.ts';
+import { identityFromBusName, mapMetadata, parseBoolProp, parseMprisPlayers, parseStatus } from './mpris.ts';
 
 type AnyBus = { invoke: (msg: Record<string, unknown>) => Promise<unknown> };
 interface NativeModule {
@@ -84,6 +90,36 @@ export class NativeController implements MediaController {
       });
     } catch {
       /* Can*-guarded no-ops land here */
+    }
+  }
+
+  /** Read Can* properties; permissive DEFAULT_CAPS on any unreadable one. */
+  async capabilities(busName: string): Promise<TransportCaps | null> {
+    try {
+      const get = (prop: string): Promise<unknown> =>
+        this.bus.invoke({
+          destination: busName,
+          path: PATH,
+          interface: 'org.freedesktop.DBus.Properties',
+          member: 'Get',
+          signature: 'ss',
+          body: [IFACE, prop],
+        });
+      const [play, pause, next, prev] = await Promise.all([
+        get('CanPlay'),
+        get('CanPause'),
+        get('CanGoNext'),
+        get('CanGoPrevious'),
+      ]);
+      const bool = (v: unknown): boolean => parseBoolProp(v) ?? true;
+      return {
+        canPlay: bool(play),
+        canPause: bool(pause),
+        canGoNext: bool(next),
+        canGoPrev: bool(prev),
+      };
+    } catch {
+      return null; // player vanished mid-probe → caller applies DEFAULT_CAPS
     }
   }
 }

@@ -66,6 +66,29 @@ export function parseStatus(value: unknown): PlayerSnapshot['status'] {
   return 'Stopped';
 }
 
+/** Coerce an MPRIS Can* boolean from any reply shape into true/false.
+ * Handles plain booleans, variant envelopes ({type:'b', value:true}) and
+ * busctl's textual `b true` form via pre-extraction. Anything else → null
+ * so callers can apply DEFAULT_CAPS instead of guessing. */
+export function parseBoolProp(value: unknown): boolean | null {
+  const v = unwrapVariant(value);
+  if (typeof v === 'boolean') return v;
+  if (typeof v === 'number') {
+    if (v === 1) return true;
+    if (v === 0) return false;
+    return null;
+  }
+  if (typeof v === 'string') {
+    const s = v.trim().toLowerCase();
+    if (s.endsWith('true')) return true;
+    if (s.endsWith('false')) return false;
+    // dbus-native sometimes nests strings inside arrays: ["b", "true"]
+    if (/^(true|false)$/.test(s)) return s === 'true';
+  }
+  if (Array.isArray(v)) return parseBoolProp(v[v.length - 1]);
+  return null;
+}
+
 /** Assemble a UI snapshot from parsed parts (shared by both backends). */
 export function buildSnapshot(
   busName: string,

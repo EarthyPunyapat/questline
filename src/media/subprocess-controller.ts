@@ -1,7 +1,13 @@
 // Subprocess fallback controller — busctl (present on GNOME). No native deps.
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import type { MediaController, PlayerSnapshot, TransportCmd } from './controller.ts';
+import type {
+  MediaController,
+  PlayerSnapshot,
+  TransportCaps,
+  TransportCmd,
+} from './controller.ts';
+import { DEFAULT_CAPS } from './controller.ts';
 import { identityFromBusName, mapMetadata, parseMprisPlayers, parseStatus } from './mpris.ts';
 
 const run = promisify(execFile);
@@ -89,6 +95,29 @@ export class SubprocessController implements MediaController {
       await busctl(['call', busName, PATH, IFACE, CMD[cmd]]);
     } catch {
       /* Can*-guarded no-ops */
+    }
+  }
+
+  /** busctl get-property prints `b true|false`; unreadable → DEFAULT_CAPS. */
+  async capabilities(busName: string): Promise<TransportCaps | null> {
+    const one = async (prop: string): Promise<boolean> => {
+      try {
+        const out = await busctl(['get-property', busName, PATH, IFACE, prop]);
+        return /\btrue\b/.test(out);
+      } catch {
+        return true; // permissive on vanished player / missing property
+      }
+    };
+    try {
+      const [play, pause, next, prev] = await Promise.all([
+        one('CanPlay'),
+        one('CanPause'),
+        one('CanGoNext'),
+        one('CanGoPrevious'),
+      ]);
+      return { canPlay: play, canPause: pause, canGoNext: next, canGoPrev: prev };
+    } catch {
+      return DEFAULT_CAPS;
     }
   }
 }

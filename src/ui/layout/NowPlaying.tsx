@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Text } from 'ink';
+import { multiPlayerHint, type PlayerChoice } from '../../media/session.ts';
 
 export interface PlayerSnapshot {
   playerName: string;
@@ -11,6 +12,15 @@ export interface PlayerSnapshot {
 interface NowPlayingProps {
   player?: PlayerSnapshot | null;
   marqueeWidth?: number;
+  /** T8.2 multi-player surface: when >1 player is visible a switch hint
+   * replaces the plain playerName line. Absent/≤1 → renders exactly as
+   * before (zero regression for the single-player default). */
+  players?: readonly PlayerChoice[];
+  /** Friendly label of the currently active player (shown inside the hint). */
+  activeLabel?: string | null;
+  /** Reserved for T8.3's 'tab' keybind wiring — parent owns key handling,
+   * this dumb component never calls it itself. */
+  onSwitch?: () => void;
 }
 
 const statusIcon: Record<PlayerSnapshot['status'], string> = {
@@ -20,7 +30,12 @@ const statusIcon: Record<PlayerSnapshot['status'], string> = {
 };
 
 /** Marquee-scrolls long titles; graceful empty state when no MPRIS player. */
-export function NowPlaying({ player, marqueeWidth = 30 }: NowPlayingProps): React.ReactElement {
+export function NowPlaying({
+  player,
+  marqueeWidth = 30,
+  players,
+  activeLabel = null,
+}: NowPlayingProps): React.ReactElement {
   const [offset, setOffset] = useState(0);
 
   const rawTitle = player?.title ?? '';
@@ -74,7 +89,7 @@ export function NowPlaying({ player, marqueeWidth = 30 }: NowPlayingProps): Reac
         <Text dimColor>{player.artist.slice(0, marqueeWidth)}</Text>
       </Box>
       <Box marginTop={1}>
-        <Text dimColor>{player.playerName}</Text>
+        <Text dimColor>{multiPlayerHint(players ?? [], activeLabel) ?? player.playerName}</Text>
       </Box>
     </Box>
   );
