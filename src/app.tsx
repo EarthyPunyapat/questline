@@ -1,7 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Box, Text, useApp, useInput } from 'ink';
 import { loadState, saveStateAtomic, statePath } from './store/persist.ts';
-import { addTask, deleteTask, getTask, sortedForDisplay, toggleDone } from './store/tasks.ts';
+import {
+  addTask,
+  canDelete,
+  deleteTask,
+  getTask,
+  selectNextId,
+  sortedForDisplay,
+  toggleDone,
+} from './store/tasks.ts';
 import type { Difficulty } from './types/task.ts';
 import { advanceStreak, localDateStr, streakMultiplier } from './xp/streaks.ts';
 import { awardXp } from './xp/engine.ts';
@@ -9,6 +17,7 @@ import { awardQuestIfComplete } from './xp/quests.ts';
 import {
   awardDailyBonusIfComplete,
   ensureDailySet,
+  skipDaily,
   todayDailies,
 } from './xp/daily.ts';
 import { applyRecurrenceRollover } from './xp/recurrence.ts';
@@ -64,6 +73,8 @@ export function App(): React.ReactElement {
   const [showStats, setShowStats] = useState(false);
   const [, bumpThemeTick] = useState(0);
   const [toast, setToast] = useState<{ key: number; message: string } | null>(null);
+  // M9: transient blocker notice (e.g. 'd' on a daily); auto-clears in 2s.
+  const [flash, setFlash] = useState<{ key: number; text: string } | null>(null);
   const [player, setPlayer] = useState<PlayerSnapshot | null>(null);
   const [controller, setController] = useState<MediaController | null>(null);
   const playerBusRef = React.useRef<string | null>(null);
@@ -103,6 +114,13 @@ export function App(): React.ReactElement {
       clearInterval(id);
     };
   }, []);
+
+  // M9: flash auto-dismiss timer; canceled on change/unmount (no leaks).
+  useEffect(() => {
+    if (!flash) return;
+    const id = setTimeout(() => setFlash(null), 2000);
+    return () => clearTimeout(id);
+  }, [flash]);
 
   const regularTasks = useMemo(
     () => sortedForDisplay(state.tasks.filter((t) => !t.isDaily)),
@@ -208,9 +226,27 @@ export function App(): React.ReactElement {
         return;
       }
       // Dailies are system-generated: deleting one would orphan today's set.
-      if ((input === 'd' || key.delete) && selectedId && !getTask(state, selectedId)?.isDaily) {
-        commit(deleteTask(state, selectedId));
-        setSelectedId(undefined);
+      // M9: the block is no longer silent — flash explains it; 'x' dismisses.
+      if (input === 'd' || key.delete) {
+        const task = selectedId ? getTask(state, selectedId) : undefined;
+        const perm = canDelete(task);
+        if (!perm.ok) {
+          setFlash({ key: Date.now(), text: perm.reason ?? 'Blocked.' });
+          return;
+        }
+        // Selection continuity (M9): land on whatever row takes the deleted
+        // slot, clamped to the tail. Only an empty board drops selection.
+        const nextSel = selectNextId(navOrder.map((t) => t.id), selectedId!);
+        commit(deleteTask(state, selectedId!));
+        setSelectedId(nextSel);
+        return;
+      }
+      // M9: 'x' dismisses the selected daily for today — hidden from board +
+      // bonus math, restored by tomorrow's fresh set. Same continuity rule.
+      if (input === 'x' && selectedId && getTask(state, selectedId)?.isDaily) {
+        const nextSel = selectNextId(navOrder.map((t) => t.id), selectedId);
+        commit(skipDaily(state, selectedId));
+        setSelectedId(nextSel);
         return;
       }
       if (input === '?') return setMode('help');
@@ -272,6 +308,11 @@ export function App(): React.ReactElement {
       )}
       {toast && (
         <LevelUpToast key={toast.key} message={toast.message} onDone={() => setToast(null)} />
+      )}
+      {flash && (
+        <Text dimColor color="yellow">
+          {flash.text}
+        </Text>
       )}
       {mode === 'help' ? (
         <HelpOverlay onDone={() => setMode('normal')} />

@@ -27,6 +27,10 @@ export interface DailyQuestSet {
   questIds: string[];
   /** True once every quest of the set was completed and +50 bonus awarded. */
   completedAll: boolean;
+  /** Ids dismissed by the user for THIS day only ('x' key). Optional so older
+   * v3 saves load unchanged (no migration); a fresh set next day drops it,
+   * which is exactly the "restored tomorrow" lifecycle. */
+  skippedIds?: string[];
 }
 
 /** Archive row for a past daily set that wasn't fully completed. */

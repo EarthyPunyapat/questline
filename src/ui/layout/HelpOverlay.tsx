@@ -7,6 +7,7 @@ const ROWS: Array<[string, string]> = [
   ['enter', 'toggle task done (awards XP + streak)'],
   ['a', 'add task (modal)'],
   ['d', 'delete selected task'],
+  ['x', 'dismiss selected daily for today'],
   ['v', 'toggle stats view'],
   ['t', 'cycle color theme'],
   ['space', 'play/pause music'],

@@ -45,19 +45,47 @@ export function pickDailySet(dateISO: string): typeof DAILY_TEMPLATES[number][] 
   return pool.slice(0, Math.min(DAILY_SET_SIZE, pool.length));
 }
 
-/** Today's daily tasks, in the set's canonical questIds order. */
+/** Ids of today's set the user dismissed with 'x' (skipped-for-today). */
+export function skippedIds(set: DailyQuestSet): ReadonlySet<string> {
+  return new Set(set.skippedIds ?? []);
+}
+
+/** Today's VISIBLE daily tasks: canonical order minus dismissed ones ('x'). */
 export function todayDailies(state: GameState): Task[] {
   const set = state.dailies;
   if (!set) return [];
+  const skipped = skippedIds(set);
   return set.questIds
     .map((id) => state.tasks.find((t) => t.id === id))
-    .filter((t): t is Task => t !== undefined);
+    .filter((t): t is Task => t !== undefined && !skipped.has(t.id));
 }
 
-/** True iff every quest of TODAY's set exists and is done. */
+/**
+ * Dismiss one of TODAY's dailies ('x'): hidden from the board, excluded from
+ * the all-done bonus math, and naturally restored next day (fresh set has no
+ * skippedIds). Pure; no-op if the id isn't part of today's set or already
+ * dismissed.
+ */
+export function skipDaily(state: GameState, questId: string): GameState {
+  const set = state.dailies;
+  if (!set || !set.questIds.includes(questId)) return state;
+  if (skippedIds(set).has(questId)) return state;
+  return {
+    ...state,
+    dailies: { ...set, skippedIds: [...(set.skippedIds ?? []), questId] },
+  };
+}
+
+/**
+ * True iff today's set has at least one VISIBLE (non-dismissed) quest and
+ * every visible quest is done. Dismissed ones neither block nor count —
+ * skipping all of them never awards the +50.
+ */
 export function isDailySetComplete(set: DailyQuestSet, state: GameState): boolean {
-  if (set.questIds.length === 0) return false;
-  return set.questIds.every((id) => {
+  const skipped = skippedIds(set);
+  const active = set.questIds.filter((id) => !skipped.has(id));
+  if (active.length === 0) return false;
+  return active.every((id) => {
     const t = state.tasks.find((x) => x.id === id);
     return t !== undefined && t.status === 'done';
   });
@@ -94,7 +122,9 @@ export function ensureDailySet(state: GameState, todayISO: string): GameState {
   const archive: MissedDailyRecord[] = [...state.dailiesArchive];
   const prev = state.dailies;
   if (prev && !prev.completedAll) {
+    const skipped = skippedIds(prev);
     const missed = prev.questIds.filter((id) => {
+      if (skipped.has(id)) return false; // dismissed on purpose, not missed
       const t = state.tasks.find((x) => x.id === id);
       return !t || t.status !== 'done';
     }).length;

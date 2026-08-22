@@ -11,6 +11,7 @@ import {
   isDailySetComplete,
   pickDailySet,
   rollRecurringTask,
+  skipDaily,
   todayDailies,
 } from './daily.ts';
 
@@ -276,5 +277,70 @@ describe('v3 recurring rollover', () => {
     };
     const next = ensureDailySet(stateWith([recurred], '2026-08-20'), '2026-08-25');
     expect(next.tasks.find((x) => x.id === 't-r')?.status).toBe('todo');
+  });
+});
+
+/** Mark a task done without pulling in store/tasks (keeps this suite pure-xp). */
+function markDone(s: GameState, id: string): GameState {
+  return {
+    ...s,
+    tasks: s.tasks.map((t) =>
+      t.id === id ? { ...t, status: 'done' as const, completedAt: 1 } : t,
+    ),
+  };
+}
+
+describe('skipDaily (M9 dismiss-for-today lifecycle)', () => {
+  test('skip hides the daily from todayDailies but keeps the task row', () => {
+    const s0 = withSet();
+    const id = todayDailies(s0)[0]!.id;
+    const s1 = skipDaily(s0, id);
+    expect(todayDailies(s1).map((t) => t.id)).not.toContain(id);
+    expect(todayDailies(s1)).toHaveLength(DAILY_SET_SIZE - 1);
+    expect(s1.tasks.some((t) => t.id === id)).toBe(true);
+    expect(s1.dailies?.skippedIds).toEqual([id]);
+  });
+
+  test('skipped daily is excluded from bonus math: skip one, done two → +50', () => {
+    const s0 = withSet();
+    const [a, b, c] = todayDailies(s0).map((t) => t.id);
+    let s = skipDaily(s0, a!);
+    s = markDone(s, b!);
+    s = markDone(s, c!);
+    const res = awardDailyBonusIfComplete(s, D1);
+    expect(res.awarded).toBe(true);
+    expect(res.xp).toBe(DAILY_BONUS_XP);
+  });
+
+  test('skipping ALL dailies never awards the bonus (nothing active)', () => {
+    let s = withSet();
+    for (const t of todayDailies(s)) s = skipDaily(s, t.id);
+    expect(awardDailyBonusIfComplete(s, D1).awarded).toBe(false);
+  });
+
+  test('next day: fresh set drops skips — dismissed dailies are restored', () => {
+    const s0 = withSet();
+    const id = todayDailies(s0)[0]!.id;
+    const s1 = skipDaily(s0, id);
+    expect(s1.dailies?.skippedIds).toEqual([id]);
+    const s2 = ensureDailySet(s1, D2); // midnight rollover
+    expect(s2.dailies?.dateISO).toBe(D2);
+    expect(s2.dailies?.skippedIds ?? []).toHaveLength(0);
+    expect(todayDailies(s2)).toHaveLength(DAILY_SET_SIZE);
+  });
+
+  test('skip is idempotent; foreign ids are no-ops (same state ref)', () => {
+    const s0 = withSet();
+    const id = todayDailies(s0)[0]!.id;
+    expect(skipDaily(skipDaily(s0, id), id).dailies?.skippedIds).toEqual([id]);
+    expect(skipDaily(s0, 't-nope')).toBe(s0);
+  });
+
+  test('dismissed ≠ missed: rollover archive count excludes skipped ids', () => {
+    const s0 = withSet(); // D1
+    const id = todayDailies(s0)[0]!.id;
+    const s1 = skipDaily(s0, id); // 1 dismissed on purpose, 2 left undone
+    const s2 = ensureDailySet(s1, D2);
+    expect(s2.dailiesArchive.at(-1)?.missedCount).toBe(DAILY_SET_SIZE - 1);
   });
 });

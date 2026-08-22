@@ -36,6 +36,40 @@ export function deleteTask(state: GameState, id: string): GameState {
   return { ...state, tasks: state.tasks.filter((t) => t.id !== id) };
 }
 
+/**
+ * M9 delete-selection continuity: after removing `removedId` from an ordered
+ * id list, the selection lands on the item that NOW occupies the removed
+ * row's index, clamped to the last item. Empty list → undefined. Unknown id
+ * → keep the tail (defensive).
+ */
+export function selectNextId(
+  ids: readonly string[],
+  removedId: string,
+): string | undefined {
+  const rest = ids.filter((id) => id !== removedId);
+  if (rest.length === 0) return undefined;
+  const idx = ids.indexOf(removedId);
+  return rest[Math.min(idx < 0 ? rest.length - 1 : idx, rest.length - 1)]!;
+}
+
+export interface DeletePermission {
+  ok: boolean;
+  /** Human-readable blocker shown as a transient flash when ok === false. */
+  reason?: string;
+}
+
+/** Pure gate for the 'd' key so the block path is unit-testable. */
+export function canDelete(task: Task | undefined): DeletePermission {
+  if (!task) return { ok: false, reason: 'Nothing selected.' };
+  if (task.isDaily) {
+    return {
+      ok: false,
+      reason: "☀ dailies renew daily — they can't be deleted. Press x to dismiss for today.",
+    };
+  }
+  return { ok: true };
+}
+
 export function listByStatus(state: GameState, status: TaskStatus): Task[] {
   return state.tasks.filter((t) => t.status === status);
 }

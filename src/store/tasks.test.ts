@@ -1,5 +1,14 @@
 import { describe, expect, test } from 'bun:test';
-import { addTask, deleteTask, getTask, listByStatus, toggleDone } from './tasks.ts';
+import {
+  addTask,
+  canDelete,
+  deleteTask,
+  getTask,
+  listByStatus,
+  selectNextId,
+  toggleDone,
+} from './tasks.ts';
+import { makeTask } from '../types/task.ts';
 import { defaultState } from '../store/persist.ts';
 import type { GameState } from '../types/state.ts';
 
@@ -72,5 +81,50 @@ describe('tasks store', () => {
     s = toggleDone(s, aId);
     expect(listByStatus(s, 'done').map((t) => t.title)).toEqual(['a']);
     expect(listByStatus(s, 'todo').map((t) => t.title)).toEqual(['b']);
+  });
+});
+
+describe('selectNextId (M9 delete continuity)', () => {
+  const ids = ['a', 'b', 'c'];
+
+  test('delete middle of 3 → selection lands on following row', () => {
+    expect(selectNextId(ids, 'b')).toBe('c');
+  });
+
+  test('delete head → following item becomes the new head', () => {
+    expect(selectNextId(ids, 'a')).toBe('b');
+  });
+
+  test('delete tail → clamps to new tail (never undefined)', () => {
+    expect(selectNextId(ids, 'c')).toBe('b');
+  });
+
+  test('list becomes empty → undefined', () => {
+    expect(selectNextId(['x'], 'x')).toBeUndefined();
+    expect(selectNextId([], 'x')).toBeUndefined();
+  });
+
+  test('unknown removed id keeps the tail defensively', () => {
+    expect(selectNextId(ids, 'zz')).toBe('c');
+  });
+});
+
+describe('canDelete (M9 blocker feedback)', () => {
+  test('daily blocks with an actionable reason pointing at x-dismiss', () => {
+    const daily = { ...makeTask('dq-1', 'stretch', 'easy'), isDaily: true };
+    const res = canDelete(daily);
+    expect(res.ok).toBe(false);
+    expect(res.reason).toContain("can't be deleted");
+    expect(res.reason).toMatch(/\bx\b/);
+  });
+
+  test('regular task deletes freely', () => {
+    expect(canDelete(makeTask('t-1', 'alpha', 'easy')).ok).toBe(true);
+  });
+
+  test('nothing selected blocks softly with a reason', () => {
+    const res = canDelete(undefined);
+    expect(res.ok).toBe(false);
+    expect(res.reason).toBeTruthy();
   });
 });
