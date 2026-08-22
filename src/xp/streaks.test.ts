@@ -6,6 +6,7 @@ const p = (lastDay: string | null, streakDays = 1): Profile => ({
   totalXp: 0,
   streakDays,
   lastCompletedDay: lastDay,
+  achievements: [],
 });
 
 describe('streaks', () => {
@@ -63,6 +64,11 @@ describe('streaks', () => {
   });
 
   test('DEFAULT_STATE profile is neutral', () => {
-    expect(DEFAULT_STATE.profile).toEqual({ totalXp: 0, streakDays: 0, lastCompletedDay: null });
+    expect(DEFAULT_STATE.profile).toEqual({
+      totalXp: 0,
+      streakDays: 0,
+      lastCompletedDay: null,
+      achievements: [],
+    });
   });
 });

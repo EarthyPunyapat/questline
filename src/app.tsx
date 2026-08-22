@@ -11,6 +11,7 @@ import {
   ensureDailySet,
   todayDailies,
 } from './xp/daily.ts';
+import { evaluateAchievements } from './xp/achievements.ts';
 import { levelCurve } from './xp/levels.ts';
 import { resolveController, type MediaController } from './media/controller.ts';
 import { cycleTheme } from './ui/theme.ts';
@@ -136,6 +137,11 @@ export function App(): React.ReactElement {
       const dailyRes = awardDailyBonusIfComplete(next, today);
       next = dailyRes.state;
       if (dailyRes.awarded) messages.push(`☀ All dailies done! +${dailyRes.xp} XP bonus`);
+
+      // 4.5 achievements post-event: exactly-once unlocks w/ timestamps.
+      const achRes = evaluateAchievements(next);
+      next = achRes.state;
+      for (const a of achRes.unlocked) messages.push(`🏆 Achievement: ${a.title}`);
 
       // 5. notifications
       const levelAfter = levelCurve(next.profile.totalXp).level;

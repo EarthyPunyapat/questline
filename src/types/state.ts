@@ -2,12 +2,21 @@
 import type { Task } from './task.ts';
 import type { Quest } from './quest.ts';
 
+/** One unlocked achievement with its unlock timestamp. */
+export interface AchievementUnlock {
+  id: string;
+  unlockedAt: number; // epoch ms
+}
+
 /** RPG profile: XP total + day-streak (local calendar dates 'YYYY-MM-DD'). */
 export interface Profile {
   totalXp: number;
   streakDays: number;
   /** Local day of last completion; null until first completion. */
   lastCompletedDay: string | null;
+  /** Unlocked achievements (id + when); exactly-once by id. Optional for
+   * backward-compat with v2 saves written before this field existed. */
+  achievements?: AchievementUnlock[];
 }
 
 /** One day's generated daily-quest set (v2). */
@@ -46,18 +55,25 @@ export const DEFAULT_STATE: GameState = {
   version: 2,
   tasks: [],
   quests: [],
-  profile: { totalXp: 0, streakDays: 0, lastCompletedDay: null },
+  profile: { totalXp: 0, streakDays: 0, lastCompletedDay: null, achievements: [] },
   completedQuestIds: [],
   dailies: null,
   dailiesArchive: [],
 };
 
 /** Legacy v1 shape (pre-dailies) as found in old state.json files. */
-export interface GameStateV1 extends Omit<GameState, 'version' | 'dailies' | 'dailiesArchive'> {
+export interface GameStateV1
+  extends Omit<GameState, 'version' | 'dailies' | 'dailiesArchive' | 'achievements'> {
   version: 1;
 }
 
 /** Upgrade a v1 save to v2: fresh empty dailies fields, everything else kept. */
 export function migrateV1toV2(v1: GameStateV1): GameState {
-  return { ...v1, version: 2, dailies: null, dailiesArchive: [] };
+  return {
+    ...v1,
+    version: 2,
+    dailies: null,
+    dailiesArchive: [],
+    profile: { ...v1.profile, achievements: [] },
+  };
 }

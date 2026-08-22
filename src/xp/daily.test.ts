@@ -172,7 +172,7 @@ describe('awardDailyBonusIfComplete', () => {
       version: 1 as const,
       tasks: [makeTask('t-1', 'old', 'hard')],
       quests: [],
-      profile: { totalXp: 5, streakDays: 1, lastCompletedDay: null },
+      profile: { totalXp: 5, streakDays: 1, lastCompletedDay: null, achievements: [] },
       completedQuestIds: [],
     };
     const v2 = migrateV1toV2(v1);

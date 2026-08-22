@@ -3,6 +3,7 @@ import { Box, Text } from 'ink';
 import type { Profile } from '../../types/state.ts';
 import { levelCurve } from '../../xp/levels.ts';
 import { XpBar } from './XpBar.tsx';
+import { TrophyRow } from './TrophyRow.tsx';
 
 export function Header({ profile }: { profile: Profile }): React.ReactElement {
   const lv = levelCurve(profile.totalXp);
@@ -23,6 +24,7 @@ export function Header({ profile }: { profile: Profile }): React.ReactElement {
         </Text>
       </Box>
       <XpBar intoLevel={lv.intoLevel} xpForNext={lv.xpForNext} />
+      <TrophyRow achievements={profile.achievements ?? []} />
     </Box>
   );
 }

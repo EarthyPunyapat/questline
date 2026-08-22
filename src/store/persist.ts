@@ -57,6 +57,16 @@ function normalize(raw: unknown): GameState | undefined {
         : 0,
     lastCompletedDay:
       typeof pRaw.lastCompletedDay === 'string' ? pRaw.lastCompletedDay : null,
+    // Older saves predate achievements → default to [].
+    achievements: Array.isArray(pRaw.achievements)
+      ? pRaw.achievements.filter(
+          (a): a is { id: string; unlockedAt: number } =>
+            typeof a === 'object' &&
+            a !== null &&
+            typeof (a as Record<string, unknown>).id === 'string' &&
+            typeof (a as Record<string, unknown>).unlockedAt === 'number',
+        )
+      : [],
   };
   // Older saves predate completedQuestIds → default to [].
   const cqiRaw = r.completedQuestIds;
