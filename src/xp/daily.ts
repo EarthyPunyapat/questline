@@ -4,6 +4,7 @@ import type { GameState, DailyQuestSet, MissedDailyRecord } from '../types/state
 import { MAX_DAILY_ARCHIVE } from '../types/state.ts';
 import { makeId, makeTask, type Task } from '../types/task.ts';
 import { DAILY_TEMPLATES } from './templates.ts';
+import { isRecurrenceDue } from './recurrence.ts';
 
 export const DAILY_SET_SIZE = 3;
 export const DAILY_BONUS_XP = 50;
@@ -62,26 +63,22 @@ export function isDailySetComplete(set: DailyQuestSet, state: GameState): boolea
   });
 }
 
-/** Local weekday number for a 'YYYY-MM-DD' date (0=Sun..6=Sat). */
-function weekdayOf(dateISO: string): number {
-  return new Date(`${dateISO}T00:00:00`).getDay();
-}
-
 /**
- * v3 recurring rollover, pure per-task rule:
- * - `daily` → any stale completion resets to todo on a new day.
- * - `weekly` → resets only when the new day matches one of `weekdays`.
- * Non-recurring / already-todo tasks pass through untouched.
+ * v3 recurring rollover, pure per-task rule. Delegates scheduling to the
+ * shared window engine (isRecurrenceDue): daily reopens on any later local
+ * day than the completion; weekly only on a scheduled weekday. Same-day
+ * completions are never reset; non-recurring/todo tasks pass through.
  */
 export function rollRecurringTask(t: Task, todayISO: string): Task {
-  const rec = t.recurrence;
-  if (!rec || t.status !== 'done') return t;
-  const reset = { ...t, status: 'todo' as const, completedAt: undefined };
-  if (rec.freq === 'daily') return reset;
-  if (rec.freq === 'weekly' && (rec.weekdays ?? []).includes(weekdayOf(todayISO))) {
-    return reset;
+  if (
+    !t.recurrence ||
+    t.status !== 'done' ||
+    t.completedAt === undefined ||
+    !isRecurrenceDue(t.recurrence, t.completedAt, todayISO)
+  ) {
+    return t;
   }
-  return t;
+  return { ...t, status: 'todo' as const, completedAt: undefined };
 }
 
 /**

@@ -11,7 +11,14 @@ const ROWS: Array<[string, string]> = [
   ['t', 'cycle color theme'],
   ['space', 'play/pause music'],
   ['n / b', 'next / previous track'],
+  ['tab', 'switch media player (>1 running)'],
   ['q', 'quit'],
+];
+
+/** Add-modal extras (shown as a footer note; the modal owns these keys). */
+const ADD_MODAL_NOTES: ReadonlyArray<string> = [
+  'add modal: r repeats (none → daily → weekly);',
+  'weekly mode: 1-7 toggles weekdays Mo..Su',
 ];
 
 interface HelpOverlayProps {
@@ -49,6 +56,11 @@ export function HelpOverlay({ onDone }: HelpOverlayProps): React.ReactElement {
           </Box>
           <Text>{desc}</Text>
         </Box>
+      ))}
+      {ADD_MODAL_NOTES.map((line) => (
+        <Text key={line} dimColor>
+          {line}
+        </Text>
       ))}
       <Text dimColor>press ? or esc to close</Text>
     </Box>
