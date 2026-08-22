@@ -67,13 +67,14 @@ export interface GameStateV1
   version: 1;
 }
 
-/** Upgrade a v1 save to v2: fresh empty dailies fields, everything else kept. */
+/** Upgrade a v1 save to v2: fresh empty dailies fields, everything else kept.
+ * Achievements are preserved when present (defensive default for odd inputs). */
 export function migrateV1toV2(v1: GameStateV1): GameState {
   return {
     ...v1,
     version: 2,
     dailies: null,
     dailiesArchive: [],
-    profile: { ...v1.profile, achievements: [] },
+    profile: { ...v1.profile, achievements: v1.profile.achievements ?? [] },
   };
 }
