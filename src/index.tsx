@@ -6,6 +6,7 @@ import React from 'react';
 import { render } from 'ink';
 import { App } from './app.tsx';
 import { loadState } from './store/persist.ts';
+import { exportState, importState } from './store/export.ts';
 import pkg from '../package.json';
 
 const NAME = pkg.name;
@@ -19,6 +20,10 @@ Flags:
   --version        print version and exit
   --help           show this help and exit
   --smoke          non-interactive self-test (boot state layer, print summary)
+  --export [path]  write a pretty JSON backup of current state and exit
+                   (default: ./questline-backup-YYYY-MM-DD.json)
+  --import <path>  restore state from a backup file and exit; the prior live
+                   state is kept as <state>.import-bak
 
 Interactive keys:
   j/k or arrows  move selection     enter   toggle done (XP + streak)
@@ -27,7 +32,16 @@ Interactive keys:
   space          play/pause        n / b   next / previous track
   ?              help overlay      q       quit`;
 
-const KNOWN_FLAGS = new Set(['--help', '-h', '--version', '-v', '-V', '--smoke']);
+const KNOWN_FLAGS = new Set([
+  '--help',
+  '-h',
+  '--version',
+  '-v',
+  '-V',
+  '--smoke',
+  '--export',
+  '--import',
+]);
 
 const args = process.argv.slice(2);
 
@@ -48,6 +62,46 @@ if (args.includes('--smoke')) {
     `smoke ok: tasks=${s.tasks.length} quests=${s.quests.length} xp=${s.profile.totalXp} streak=${s.profile.streakDays}`,
   );
   process.exit(0);
+}
+
+// Backup flags are non-TTY safe: pure fs work, no ink render (SYNC-1 rule).
+/** undefined = flag absent · null = flag present without a value · string = value */
+function flagValue(name: string): string | null | undefined {
+  const i = args.indexOf(name);
+  if (i === -1) return undefined;
+  const v = args[i + 1];
+  return v !== undefined && !v.startsWith('-') ? v : null;
+}
+
+const exportTarget = flagValue('--export');
+if (exportTarget !== undefined) {
+  try {
+    const res = exportState(exportTarget ?? undefined);
+    console.log(`exported ${res.taskCount} tasks (${res.totalXp} xp) -> ${res.path}`);
+    process.exit(0);
+  } catch (err) {
+    process.stderr.write(`${NAME}: export failed: ${(err as Error).message}\n`);
+    process.exit(1);
+  }
+}
+
+const importSource = flagValue('--import');
+if (importSource !== undefined) {
+  if (importSource === null) {
+    process.stderr.write(`${NAME}: --import requires a <path> argument\n\n${USAGE}\n`);
+    process.exit(1);
+  }
+  try {
+    const res = importState(importSource);
+    const bak = res.backupPath ? ` · prior state saved to ${res.backupPath}` : '';
+    console.log(
+      `imported ${res.imported.tasks.length} tasks (${res.imported.profile.totalXp} xp)${bak}`,
+    );
+    process.exit(0);
+  } catch (err) {
+    process.stderr.write(`${NAME}: ${(err as Error).message}\n`);
+    process.exit(1);
+  }
 }
 
 const unknown = args.find((a) => !KNOWN_FLAGS.has(a));
