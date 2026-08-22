@@ -25,6 +25,8 @@ export interface Task {
   completedAt?: number;
   /** Optional quest chain membership. */
   questId?: string;
+  /** True for generated daily-quest tasks (v2 dailies live in state.tasks). */
+  isDaily?: boolean;
 }
 
 /** Short unique id: `<prefix>-<8 hex>`. */
@@ -74,7 +76,8 @@ export function isValidTask(u: unknown): u is Task {
     (t.status === 'todo' || t.status === 'done') &&
     typeof t.createdAt === 'number' &&
     (t.completedAt === undefined || typeof t.completedAt === 'number') &&
-    (t.questId === undefined || typeof t.questId === 'string')
+    (t.questId === undefined || typeof t.questId === 'string') &&
+    (t.isDaily === undefined || typeof t.isDaily === 'boolean')
   );
 }
 

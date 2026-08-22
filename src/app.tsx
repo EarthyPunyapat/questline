@@ -6,11 +6,17 @@ import type { Difficulty } from './types/task.ts';
 import { advanceStreak, localDateStr, streakMultiplier } from './xp/streaks.ts';
 import { awardXp } from './xp/engine.ts';
 import { awardQuestIfComplete } from './xp/quests.ts';
+import {
+  awardDailyBonusIfComplete,
+  ensureDailySet,
+  todayDailies,
+} from './xp/daily.ts';
 import { levelCurve } from './xp/levels.ts';
 import { resolveController, type MediaController } from './media/controller.ts';
 import { cycleTheme } from './ui/theme.ts';
 import { Header } from './ui/layout/Header.tsx';
 import { TaskList } from './ui/layout/TaskList.tsx';
+import { Dailies } from './ui/layout/Dailies.tsx';
 import { AddTaskModal } from './ui/layout/AddTaskModal.tsx';
 import { Footer } from './ui/layout/Footer.tsx';
 import { LevelUpToast } from './ui/layout/LevelUpToast.tsx';
@@ -22,11 +28,27 @@ type Mode = 'normal' | 'adding' | 'help';
 
 export function App(): React.ReactElement {
   const { exit } = useApp();
-  // Boot: load once (corrupt files already quarantined by persist layer).
-  const [state, setState] = useState(() => loadState());
-  const [selectedId, setSelectedId] = useState<string | undefined>(() =>
-    sortedForDisplay(state.tasks)[0]?.id,
+  // Boot: load (v1 saves migrated transparently), roll today's daily set BEFORE
+  // first render; a rollover/migration is persisted immediately so archives
+  // survive even if the user quits idle.
+  const [state, setState] = useState(() => {
+    const loaded = loadState();
+    const next = ensureDailySet(loaded, localDateStr());
+    if (next !== loaded) {
+      try {
+        saveStateAtomic(next, statePath());
+      } catch {
+        /* boot continues; next commit persists */
+      }
+    }
+    return next;
+  });
+  // Selection spans dailies + tasks: j/k traverses both sections in one list.
+  const navOrder = useMemo(
+    () => [...todayDailies(state), ...sortedForDisplay(state.tasks.filter((t) => !t.isDaily))],
+    [state.tasks, state.dailies],
   );
+  const [selectedId, setSelectedId] = useState<string | undefined>(() => navOrder[0]?.id);
   const [mode, setMode] = useState<Mode>('normal');
   const [showStats, setShowStats] = useState(false);
   const [, bumpThemeTick] = useState(0);
@@ -61,7 +83,10 @@ export function App(): React.ReactElement {
     };
   }, []);
 
-  const visible = useMemo(() => sortedForDisplay(state.tasks), [state.tasks]);
+  const regularTasks = useMemo(
+    () => sortedForDisplay(state.tasks.filter((t) => !t.isDaily)),
+    [state.tasks],
+  );
 
   const persist = useCallback((next: typeof state) => {
     try {
@@ -107,7 +132,12 @@ export function App(): React.ReactElement {
         if (res.awarded) messages.push(`Quest complete: ${q.title} +${res.xp} XP!`);
       }
 
-      // 4. notifications
+      // 4. daily all-done bonus (+50, exactly-once via completedAll)
+      const dailyRes = awardDailyBonusIfComplete(next, today);
+      next = dailyRes.state;
+      if (dailyRes.awarded) messages.push(`☀ All dailies done! +${dailyRes.xp} XP bonus`);
+
+      // 5. notifications
       const levelAfter = levelCurve(next.profile.totalXp).level;
       if (levelAfter > levelBefore) messages.unshift(`LEVEL UP → ${levelAfter}!`);
       const gainedXp = next.profile.totalXp - prev.profile.totalXp;
@@ -124,13 +154,13 @@ export function App(): React.ReactElement {
       if (input === 'q') return exit();
 
       if (key.upArrow || input === 'k') {
-        const idx = visible.findIndex((t) => t.id === selectedId);
-        if (idx > 0) setSelectedId(visible[idx - 1]!.id);
+        const idx = navOrder.findIndex((t) => t.id === selectedId);
+        if (idx > 0) setSelectedId(navOrder[idx - 1]!.id);
         return;
       }
       if (key.downArrow || input === 'j') {
-        const idx = visible.findIndex((t) => t.id === selectedId);
-        if (idx >= 0 && idx < visible.length - 1) setSelectedId(visible[idx + 1]!.id);
+        const idx = navOrder.findIndex((t) => t.id === selectedId);
+        if (idx >= 0 && idx < navOrder.length - 1) setSelectedId(navOrder[idx + 1]!.id);
         return;
       }
       if (key.return && selectedId) {
@@ -139,6 +169,7 @@ export function App(): React.ReactElement {
         // Commit the FULL pipeline result (streak + XP + quest bonus) on
         // todo→done; un-completing needs only the raw toggle.
         if (before && before.status === 'todo') {
+          // Pipeline handles streak/XP/quest-bonus/daily-bonus + toast messages.
           commit(completePipeline(after, selectedId));
         } else {
           commit(after);
@@ -149,7 +180,8 @@ export function App(): React.ReactElement {
         setMode('adding');
         return;
       }
-      if ((input === 'd' || key.delete) && selectedId) {
+      // Dailies are system-generated: deleting one would orphan today's set.
+      if ((input === 'd' || key.delete) && selectedId && !getTask(state, selectedId)?.isDaily) {
         commit(deleteTask(state, selectedId));
         setSelectedId(undefined);
         return;
@@ -189,10 +221,18 @@ export function App(): React.ReactElement {
         <Box gap={2}>
           <Box borderStyle="round" borderColor="green" flexDirection="column" width="62%">
             <Text bold color="green">
-              TASKS ({state.tasks.filter((t) => t.status === 'todo').length}/{state.tasks.length}{' '}
-              open)
+              TASKS (
+              {state.tasks.filter((t) => t.status === 'todo' && !t.isDaily).length}/
+              {regularTasks.length} open)
             </Text>
-            <TaskList tasks={visible} selectedId={selectedId} />
+            <Box paddingX={1}>
+              <Dailies
+                tasks={todayDailies(state)}
+                set={state.dailies}
+                selectedId={selectedId}
+              />
+            </Box>
+            <TaskList tasks={regularTasks} selectedId={selectedId} />
           </Box>
           <NowPlaying player={player} />
         </Box>
