@@ -30,7 +30,7 @@ Build first, then install a symlink into `~/.local/bin` so `questline` runs from
 ```bash
 bun install
 bun run build        # required once: produces dist/questline
-bun run install      # symlink → ~/.local/bin/questline (idempotent)
+bun run setup      # symlink → ~/.local/bin/questline (idempotent)
 ```
 
 Then launch from any directory:
