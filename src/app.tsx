@@ -243,7 +243,12 @@ export function App(): React.ReactElement {
       }
       // M9: 'x' dismisses the selected daily for today — hidden from board +
       // bonus math, restored by tomorrow's fresh set. Same continuity rule.
-      if (input === 'x' && selectedId && getTask(state, selectedId)?.isDaily) {
+      if (input === 'x' && selectedId) {
+        // M9: on anything but a daily, explain instead of silently doing nothing.
+        if (!getTask(state, selectedId)?.isDaily) {
+          setFlash({ key: Date.now(), text: 'x dismisses dailies only — use d to delete a task.' });
+          return;
+        }
         const nextSel = selectNextId(navOrder.map((t) => t.id), selectedId);
         commit(skipDaily(state, selectedId));
         setSelectedId(nextSel);
