@@ -4,8 +4,8 @@ A gamified terminal life-tracker: turn your todo list into an RPG.
 Tasks award XP by difficulty, day-streaks multiply gains, quest chains pay
 completion bonuses — and a live MPRIS music widget keeps the soundtrack going.
 
-<!-- CI badge: replace OWNER/REPO with your GitHub slug once the repo is pushed -->
-[![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/REPO/actions/workflows/ci.yml)
+<!-- CI badge: replace EarthyPunyapat/questline with your GitHub slug once the repo is pushed -->
+[![CI](https://github.com/EarthyPunyapat/questline/actions/workflows/ci.yml/badge.svg)](https://github.com/EarthyPunyapat/questline/actions/workflows/ci.yml)
 
 ![demo](docs/demo.gif)
 
