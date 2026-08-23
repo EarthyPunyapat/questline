@@ -6,92 +6,51 @@ import {
   type Recurrence,
 } from '../../types/task.ts';
 import { difficultyColor, theme } from '../theme.ts';
+import {
+  BADGE,
+  DAY_LABELS,
+  INITIAL_STATE,
+  REC_CYCLE,
+  reduceModal,
+  type ModalState,
+  type RecMode,
+} from './addTaskWizard.ts';
 
 interface AddTaskModalProps {
   onSubmit: (title: string, difficulty: Difficulty, recurrence?: Recurrence) => void;
   onCancel: () => void;
 }
 
-type RecMode = 'none' | 'daily' | 'weekly';
-
-/** Display order Mon..Sun; stored as JS dow numbers (1..6, 0 for Sun). */
-const DAY_LABELS: ReadonlyArray<{ label: string; dow: number }> = [
-  { label: 'Mo', dow: 1 },
-  { label: 'Tu', dow: 2 },
-  { label: 'We', dow: 3 },
-  { label: 'Th', dow: 4 },
-  { label: 'Fr', dow: 5 },
-  { label: 'Sa', dow: 6 },
-  { label: 'Su', dow: 0 },
-];
-
-const REC_CYCLE: readonly RecMode[] = ['none', 'daily', 'weekly'];
-const BADGE: Record<RecMode, string> = { none: '', daily: '⟳ daily', weekly: '⟳ weekly' };
-
 /**
- * Modal input: type title, TAB/←/→ cycles difficulty, `r` cycles recurrence
- * (none → daily → weekly), digits 1-7 toggle weekdays in weekly mode,
- * ENTER submits, ESC cancels.
+ * Two-phase wizard (M9/T9.2 fix): keys used to mean commands even while the
+ * user typed the title ('r' cycled recurrence, digits toggled weekdays), so
+ * titles like "read 30 pages" were impossible.
+ *
+ * PHASE 1 'title'   : everything printable is TEXT; enter advances, esc cancels.
+ * PHASE 2 'options' : title frozen on top; tab/←/→ difficulty, r recurrence,
+ *                     1-7 weekday picker while weekly, enter submits
+ *                     (blocked with a warning if weekly has no days),
+ *                     esc goes back to phase 1 with the title preserved.
  */
 export function AddTaskModal({ onSubmit, onCancel }: AddTaskModalProps): React.ReactElement {
-  const [title, setTitle] = useState('');
-  const [diffIdx, setDiffIdx] = useState(1);
-  const [recIdx, setRecIdx] = useState(0);
-  const [weekdays, setWeekdays] = useState<number[]>([]);
-  const difficulty = DIFFICULTIES[diffIdx] as Difficulty;
-  const recMode = REC_CYCLE[recIdx] as RecMode;
-
-  const buildRecurrence = (): Recurrence | undefined => {
-    if (recMode === 'daily') return { freq: 'daily' };
-    if (recMode === 'weekly') {
-      if (weekdays.length === 0) return undefined; // no days picked → one-shot
-      return { freq: 'weekly', weekdays: [...weekdays].sort((a, b) => a - b) };
-    }
-    return undefined;
-  };
+  const [modal, setModal] = useState<ModalState>(INITIAL_STATE);
+  const [warning, setWarning] = useState<string | null>(null);
 
   useInput(
     (input, key) => {
-      if (key.escape) return onCancel();
-      if (key.tab) {
-        setDiffIdx((i) => (i + 1) % DIFFICULTIES.length);
-        return;
-      }
-      if (input === 'r') {
-        setRecIdx((i) => (i + 1) % REC_CYCLE.length);
-        return;
-      }
-      // Weekly picker: digits 1-7 map to Mon..Sun (7 → Sunday/dow 0).
-      if (recMode === 'weekly' && input >= '1' && input <= '7') {
-        const dow = input === '7' ? 0 : Number.parseInt(input, 10);
-        setWeekdays((days) =>
-          days.includes(dow) ? days.filter((d) => d !== dow) : [...days, dow],
-        );
-        return;
-      }
-      if (key.leftArrow) {
-        setDiffIdx((i) => (i - 1 + DIFFICULTIES.length) % DIFFICULTIES.length);
-        return;
-      }
-      if (key.rightArrow) {
-        setDiffIdx((i) => (i + 1) % DIFFICULTIES.length);
-        return;
-      }
-      if (key.return) {
-        const trimmed = title.trim();
-        if (trimmed.length > 0) onSubmit(trimmed, difficulty, buildRecurrence());
-        return;
-      }
-      if (key.backspace || key.delete) {
-        setTitle((t) => t.slice(0, -1));
-        return;
-      }
-      if (input && !key.ctrl && !key.meta) {
-        setTitle((t) => (t.length < 80 ? t + input : t));
-      }
+      const next = reduceModal(modal, input, key);
+      setWarning(next.effect.kind === 'warn' ? next.effect.message : null);
+      setModal(next.state);
+      const fx = next.effect;
+      if (fx.kind === 'cancel') onCancel();
+      else if (fx.kind === 'submit') onSubmit(fx.title, fx.difficulty, fx.recurrence);
     },
     { isActive: true },
   );
+
+  const recMode: RecMode =
+    modal.phase === 'options' ? REC_CYCLE[modal.recIdx] as RecMode : 'none';
+  const diffIdx = modal.phase === 'options' ? modal.diffIdx : -1;
 
   return (
     <Box
@@ -104,45 +63,65 @@ export function AddTaskModal({ onSubmit, onCancel }: AddTaskModalProps): React.R
       <Text bold color={theme.accent}>
         New Task
       </Text>
-      <Text>
-        {'> '}
-        {title}
-        <Text inverse> </Text>
-      </Text>
-      <Box gap={2} marginTop={1}>
-        {DIFFICULTIES.map((d, i) => (
-          <Text
-            key={d}
-            color={i === diffIdx ? difficultyColor[d] : theme.muted}
-            bold={i === diffIdx}
-          >
-            {i === diffIdx ? '◉' : '○'} {d}
+      {modal.phase === 'title' ? (
+        <>
+          <Text>
+            {'> '}
+            {modal.title}
+            <Text inverse> </Text>
           </Text>
-        ))}
-        <Text color={recMode === 'none' ? theme.muted : theme.accent} bold={recMode !== 'none'}>
-          {BADGE[recMode]}
-        </Text>
-      </Box>
-      {recMode === 'weekly' && (
-        <Box gap={1} marginTop={1}>
-          {DAY_LABELS.map((d, i) => {
-            const on = weekdays.includes(d.dow);
-            return (
-              <Text key={d.label} color={on ? theme.accent : theme.muted} bold={on}>
-                {i + 1}
-                {on ? '◉' : '○'}
-                {d.label}
+          <Box marginTop={1}>
+            <Text dimColor>type the quest · enter: next · esc: cancel</Text>
+          </Box>
+        </>
+      ) : (
+        <>
+          {/* Frozen title from phase 1 */}
+          <Text dimColor>
+            new quest:
+          </Text>
+          <Text bold>{modal.title}</Text>
+          <Box gap={2} marginTop={1}>
+            {DIFFICULTIES.map((d, i) => (
+              <Text
+                key={d}
+                color={i === diffIdx ? difficultyColor[d] : theme.muted}
+                bold={i === diffIdx}
+              >
+                {i === diffIdx ? '◉' : '○'} {d}
               </Text>
-            );
-          })}
-        </Box>
+            ))}
+            <Text color={recMode === 'none' ? theme.muted : theme.accent} bold={recMode !== 'none'}>
+              {BADGE[recMode]}
+            </Text>
+          </Box>
+          {recMode === 'weekly' && (
+            <Box gap={1} marginTop={1}>
+              {DAY_LABELS.map((d, i) => {
+                const on = modal.weekdays.includes(d.dow);
+                return (
+                  <Text key={d.label} color={on ? theme.accent : theme.muted} bold={on}>
+                    {i + 1}
+                    {on ? '◉' : '○'}
+                    {d.label}
+                  </Text>
+                );
+              })}
+            </Box>
+          )}
+          {warning !== null && (
+            <Text color="yellow" bold>
+              ⚠ {warning}
+            </Text>
+          )}
+          <Box marginTop={1}>
+            <Text dimColor>
+              tab/←→: difficulty · r: repeat ({recMode}) · enter: add · esc: edit title
+              {recMode === 'weekly' ? ' · 1-7: pick days' : ''}
+            </Text>
+          </Box>
+        </>
       )}
-      <Box marginTop={1}>
-        <Text dimColor>
-          tab: difficulty · r: repeat · enter: save · esc: cancel
-          {recMode === 'weekly' ? ' · 1-7: pick days' : ''}
-        </Text>
-      </Box>
     </Box>
   );
 }
