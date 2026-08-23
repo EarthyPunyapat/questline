@@ -37,6 +37,7 @@ Interactive keys:
   a              add task          d       delete selected task
   v              toggle stats      t       cycle theme
   space          play/pause        n / b   next / previous track
+  x              dismiss daily     tab     switch media player (>1 running)
   ?              help overlay      q       quit`;
 
 const KNOWN_FLAGS = new Set([
