@@ -339,3 +339,18 @@ describe('v4 notes migration', () => {
     expect(clamped.notes[0]!.body.length).toBe(MAX_NOTE_BODY_LEN);
   });
 });
+
+describe('lastPomodoroAwardedAt (M10/T10.D restart guard)', () => {
+  test('survives save/load; absent stays undefined', () => {
+    const s = defaultState();
+    s.profile.lastPomodoroAwardedAt = '2026-08-23';
+    saveStateAtomic(s, path);
+    const loaded = loadState(path);
+    expect(loaded.profile.lastPomodoroAwardedAt).toBe('2026-08-23');
+
+    const bare = defaultState();
+    delete bare.profile.lastPomodoroAwardedAt;
+    saveStateAtomic(bare, path);
+    expect(loadState(path).profile.lastPomodoroAwardedAt).toBeUndefined();
+  });
+});

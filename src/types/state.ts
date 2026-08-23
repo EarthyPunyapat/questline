@@ -17,6 +17,10 @@ export interface Profile {
   /** Unlocked achievements (id + when); exactly-once by id. Optional for
    * backward-compat with v2 saves written before this field existed. */
   achievements?: AchievementUnlock[];
+  /** Local day ('YYYY-MM-DD') of the last completed pomodoro whose +15 XP was
+   * awarded; guards double-award across restarts. Optional like achievements
+   * (no schema-version bump needed). */
+  lastPomodoroAwardedAt?: string;
 }
 
 /** One day's generated daily-quest set (v2). */

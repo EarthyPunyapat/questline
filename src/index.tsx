@@ -36,6 +36,9 @@ Interactive keys:
   j/k or arrows  move selection     enter   toggle done (XP + streak)
   a              add task          d       delete selected task
   v              toggle stats      t       cycle theme
+  c              calendar (arrows page months)
+  N              notes (n new · enter/e edit · p pin · d delete)
+  p              start/pause pomodoro (25:00 -> +15 XP once/day)
   space          play/pause        n / b   next / previous track
   x              dismiss daily     tab     switch media player (>1 running)
   ?              help overlay      q       quit`;

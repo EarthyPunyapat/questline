@@ -95,6 +95,11 @@ export function App(): React.ReactElement {
   const [activeLabel, setActiveLabel] = useState<string | null>(null);
   // M10: calendar panel replaces the board exactly like stats does.
   const [showCal, setShowCal] = useState(false);
+  // Calendar cursor (‹ › month paging); resets to the current month on open.
+  const [calCursor, setCalCursor] = useState(() => {
+    const d = new Date();
+    return { y: d.getFullYear(), m: d.getMonth() };
+  });
   // M10: notes overlay — list cursor + open editor ({note} edit, {} new).
   const [noteSel, setNoteSel] = useState(0);
   const [noteEdit, setNoteEdit] = useState<{ note?: Note } | null>(null);
@@ -225,29 +230,57 @@ export function App(): React.ReactElement {
     return () => clearInterval(id);
   }, [pomo?.running]);
 
-  // M10/T10.D: flat +15 XP exactly once per completed session.
+  // M10/T10.D: flat +15 XP exactly once per completed session. Persisted
+  // lastPomodoroAwardedAt marker guards double-award across restarts; the
+  // in-process ref guards re-entrant effect runs.
   useEffect(() => {
     if (!pomo || pomo.running || !isPomodoroComplete(pomo.remainingSec)) return;
-    if (pomoAwardedRef.current) return;
-    pomoAwardedRef.current = true;
-    const levelBefore = levelCurve(state.profile.totalXp).level;
-    const next: typeof state = {
-      ...state,
-      profile: { ...state.profile, totalXp: state.profile.totalXp + POMODORO_XP },
-    };
-    commit(next);
-    const levelAfter = levelCurve(next.profile.totalXp).level;
-    const parts: string[] = [];
-    if (levelAfter > levelBefore) parts.push(`LEVEL UP → ${levelAfter}!`);
-    parts.push(formatXpGain(POMODORO_XP, 1));
-    setFlash({ key: Date.now(), text: '🍅 Pomodoro complete!' });
-    setToast({ key: Date.now(), message: parts.join('  ') });
+    const today = localDateStr();
+    const claimable =
+      !pomoAwardedRef.current && state.profile.lastPomodoroAwardedAt !== today;
+    if (claimable) {
+      pomoAwardedRef.current = true;
+      const levelBefore = levelCurve(state.profile.totalXp).level;
+      const next: typeof state = {
+        ...state,
+        profile: {
+          ...state.profile,
+          totalXp: state.profile.totalXp + POMODORO_XP,
+          lastPomodoroAwardedAt: today,
+        },
+      };
+      commit(next);
+      const levelAfter = levelCurve(next.profile.totalXp).level;
+      const parts: string[] = [];
+      if (levelAfter > levelBefore) parts.push(`LEVEL UP → ${levelAfter}!`);
+      parts.push(formatXpGain(POMODORO_XP, 1));
+      setToast({ key: Date.now(), message: parts.join('  ') });
+      setFlash({ key: Date.now(), text: '🍅 Pomodoro complete!' });
+    } else {
+      setFlash({ key: Date.now(), text: '🍅 Pomodoro done — daily +15xp already claimed' });
+    }
+    setPomo(null); // hide the finished timer; next 'p' starts a fresh session
   }, [pomo, state, commit]);
 
   useInput(
     (input, key) => {
       if (mode !== 'normal') return; // modal owns the keyboard
       if (input === 'q') return exit();
+
+      // M10: while the calendar panel is open, ←/→ page months instead of
+      // moving task selection (Date overflow handles the year rollover).
+      if (showCal && (key.leftArrow || input === 'h')) {
+        return setCalCursor((c) => {
+          const d = new Date(c.y, c.m - 1, 1);
+          return { y: d.getFullYear(), m: d.getMonth() };
+        });
+      }
+      if (showCal && (key.rightArrow || input === 'l')) {
+        return setCalCursor((c) => {
+          const d = new Date(c.y, c.m + 1, 1);
+          return { y: d.getFullYear(), m: d.getMonth() };
+        });
+      }
 
       if (key.upArrow || input === 'k') {
         const idx = navOrder.findIndex((t) => t.id === selectedId);
@@ -307,8 +340,12 @@ export function App(): React.ReactElement {
       }
       if (input === '?') return setMode('help');
       if (input === 'v') return setShowStats((s) => !s);
-      // M10: calendar panel toggle (independent of stats).
-      if (input === 'c') return setShowCal((s) => !s);
+      // M10: calendar panel toggle (independent of stats); opens on today.
+      if (input === 'c') {
+        const d = new Date();
+        setCalCursor({ y: d.getFullYear(), m: d.getMonth() });
+        return setShowCal((s) => !s);
+      }
       // M10: notes overlay — uppercase only; lowercase n stays media-next.
       if (input === 'N') {
         setNoteSel(0);
@@ -367,7 +404,7 @@ export function App(): React.ReactElement {
       if (input === 'k' || key.upArrow) return setNoteSel((i) => Math.max(0, i - 1));
       const sel = sorted[noteSel];
       if (!sel) return;
-      if (input === 'e') return setNoteEdit({ note: sel });
+      if (input === 'e' || key.return) return setNoteEdit({ note: sel });
       if (input === 'p') return commit(togglePin(state, sel.id));
       if (input === 'd' || key.delete) {
         commit(deleteNote(state, sel.id));
@@ -385,12 +422,7 @@ export function App(): React.ReactElement {
           <StatsView state={state} />
         </Box>
       ) : showCal ? (
-        <Calendar
-          state={state}
-          year={new Date().getFullYear()}
-          monthIdx={new Date().getMonth()}
-          bordered
-        />
+        <Calendar state={state} year={calCursor.y} monthIdx={calCursor.m} bordered />
       ) : (
         <Box gap={2}>
           <Box borderStyle="round" borderColor="green" flexDirection="column" width="62%">
@@ -454,7 +486,7 @@ export function App(): React.ReactElement {
             </Text>
             <Notes notes={state.notes} />
             <Text dimColor>
-              n new · e edit · p pin · d delete · j/k move · esc back
+              n new · enter/e edit · p pin · d delete · j/k move · esc back
             </Text>
           </Box>
         )

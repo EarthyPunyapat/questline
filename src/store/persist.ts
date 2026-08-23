@@ -94,6 +94,11 @@ function normalize(raw: unknown): GameState | undefined {
             typeof (a as Record<string, unknown>).unlockedAt === 'number',
         )
       : [],
+    // Optional pomodoro award marker (M10/T10.D); absent on old saves.
+    lastPomodoroAwardedAt:
+      typeof pRaw.lastPomodoroAwardedAt === 'string'
+        ? pRaw.lastPomodoroAwardedAt
+        : undefined,
   };
   // Older saves predate completedQuestIds → default to [].
   const cqiRaw = r.completedQuestIds;
