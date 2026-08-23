@@ -14,6 +14,13 @@ import {
   createMediaSession,
   multiPlayerHint,
 } from './session.ts';
+import {
+  playersLine,
+  rankPlayers,
+  smartPick,
+  STATUS_GLYPH,
+  withTrackFallback,
+} from './pick.ts';
 
 const FIREFOX = 'org.mpris.MediaPlayer2.firefox.instance_1_168';
 const VLC = 'org.mpris.MediaPlayer2.vlc';
@@ -166,8 +173,11 @@ describe('ActiveMediaSession (T8.2 multi-player)', () => {
     expect(s.players.length).toBe(2);
   });
 
-  test('auto-pick-first default: transport targets the first player', async () => {
-    const m = createMockController([FIREFOX, VLC]);
+  test('smart default pick: ranked winner owns transport (M11/A)', async () => {
+    const m = createMockController([VLC, FIREFOX]);
+    // Old pick-first grabbed whichever bus listed first — now Playing ranks first.
+    m.setSnapshot(VLC, { status: 'Paused', title: 'b-side' });
+    m.setSnapshot(FIREFOX, { status: 'Playing', title: 'hit song' });
     const s = new ActiveMediaSession(m);
     expect(await s.autoPick()).toBe(FIREFOX);
     await s.send('next');
@@ -246,5 +256,123 @@ describe('ActiveMediaSession (T8.2 multi-player)', () => {
     expect(await s.send('playPause')).toBe(false);
     expect(m.commands).toEqual([]);
     expect(await s.snapshotActive()).toBeNull();
+  });
+});
+
+describe('ActiveMediaSession M11/A robustness (smart pick · vanish rescan · ghosts)', () => {
+  const ZENA = 'org.mpris.MediaPlayer2.zena'; // the leftover fake from the field report
+  const ZENB = 'org.mpris.MediaPlayer2.zenb';
+
+  test('THE FIELD BUG: Playing ghost loses to titled player at boot', async () => {
+    const m = createMockController([ZENA, FIREFOX]);
+    m.setSnapshot(ZENA, { status: 'Playing' }); // empty Metadata — widget used to latch THIS
+    m.setSnapshot(FIREFOX, { status: 'Paused', title: 'Bohemian Rhapsody', artist: 'Queen' });
+    const s = new ActiveMediaSession(m);
+    expect(await s.autoPick()).toBe(FIREFOX);
+    const snap = await s.snapshotActive();
+    expect(snap?.title).toBe('Bohemian Rhapsody');
+  });
+
+  test('two ghosts → no latch at all; lone ghost IS latched (only-one rule)', async () => {
+    const both = createMockController([ZENA, ZENB]);
+    both.setSnapshot(ZENA, { status: 'Playing' });
+    both.setSnapshot(ZENB, { status: 'Playing' });
+    const sBoth = new ActiveMediaSession(both);
+    expect(await sBoth.autoPick()).toBeNull();
+    expect(sBoth.activeName).toBeNull();
+    expect(await sBoth.snapshotActive()).toBeNull();
+
+    const lone = createMockController([ZENA]);
+    lone.setSnapshot(ZENA, { status: 'Playing' });
+    const sLone = new ActiveMediaSession(lone);
+    expect(await sLone.autoPick()).toBe(ZENA); // only-one exception
+  });
+
+  test('ranked discovery surface exposes status glyphs (UI-ready)', async () => {
+    const m = createMockController([FIREFOX, VLC]);
+    m.setSnapshot(FIREFOX, { status: 'Playing', title: 't1' });
+    m.setSnapshot(VLC, { status: 'Paused', title: 't2' });
+    const s = new ActiveMediaSession(m);
+    await s.autoPick();
+    expect(playersLine(s.ranking)).toBe('▶ firefox · ⏸ vlc');
+  });
+
+  test('ghost demotion: boot-latched ghost yields to a later titled peer (~2s)', async () => {
+    const m = createMockController([ZENA]);
+    m.setSnapshot(ZENA, { status: 'Playing' }); // latched as only player
+    const s = new ActiveMediaSession(m);
+    await s.autoPick();
+    expect(s.activeName).toBe(ZENA);
+
+    // Real player shows up afterwards. Surveillance is throttled to ~2s:
+    // an immediate poll must NOT flip yet...
+    m.players = [ZENA, FIREFOX];
+    m.setSnapshot(FIREFOX, { status: 'Paused', title: 'real track' });
+    expect(await s.snapshotActive()).not.toBeNull();
+    expect(s.activeName).toBe(ZENA);
+    // ...after the throttle window it re-ranks and takes over.
+    await new Promise((r) => setTimeout(r, 2100));
+    const snap = await s.snapshotActive();
+    expect(s.activeName).toBe(FIREFOX);
+    expect(snap?.title).toBe('real track');
+  }, 8000);
+
+  test('explicit switchTo stays sticky even when a titled peer appears', async () => {
+    const m = createMockController([ZENA]);
+    m.setSnapshot(ZENA, { status: 'Playing' });
+    const s = new ActiveMediaSession(m);
+    await s.switchTo(ZENA); // user's explicit choice
+    m.players = [ZENA, FIREFOX];
+    m.setSnapshot(FIREFOX, { status: 'Playing', title: 'other' });
+    await s.autoPick(); // explicit wins while its player lives
+    expect(s.activeName).toBe(ZENA);
+  });
+
+  test('vanish → immediate rescan re-picks a surviving player in one tick', async () => {
+    const m = createMockController([FIREFOX, VLC]);
+    m.setSnapshot(FIREFOX, { status: 'Playing', title: 't1' });
+    m.setSnapshot(VLC, { status: 'Paused', title: 't2' });
+    const s = new ActiveMediaSession(m);
+    await s.autoPick(); // firefox
+    m.removePlayer(FIREFOX); // dies like firefox.instance_* when tabs close
+    const snap = await s.snapshotActive();
+    expect(s.activeName).toBe(VLC);
+    expect(snap?.title).toBe('t2');
+    expect(s.isRescanning).toBe(false);
+  });
+
+  test('total vanish → rescanning state persists; recovery clears it', async () => {
+    const m = createMockController([FIREFOX]);
+    m.setSnapshot(FIREFOX, { status: 'Playing', title: 't1' });
+    const s = new ActiveMediaSession(m);
+    await s.autoPick();
+
+    m.removePlayer(FIREFOX); // bus goes quiet
+    expect(await s.snapshotActive()).toBeNull();
+    expect(s.isRescanning).toBe(true); // UI may show "rescanning…", not dead air
+
+    // Player rejoins (firefox exposes MPRIS only while media tabs are active).
+    m.players = [FIREFOX];
+    m.setSnapshot(FIREFOX, { status: 'Playing', title: 'back again' });
+    const snap = await s.snapshotActive(); // idle path rescans EVERY tick
+    expect(snap?.title).toBe('back again');
+    expect(s.isRescanning).toBe(false);
+  });
+
+  test('unknown-track tolerance flows through session snapshots', async () => {
+    const m = createMockController([ZENA]);
+    m.setSnapshot(ZENA, { status: 'Playing' }); // playing but metadata-less
+    const s = new ActiveMediaSession(m);
+    await s.autoPick();
+    const snap = await s.snapshotActive();
+    expect(snap?.title).toBe('unknown track'); // blank marquee fixed
+  });
+
+  test('anti-ghost default: all-untitled pair never auto-latches transport', async () => {
+    const m = createMockController([FIREFOX, ZENA]);
+    const s = new ActiveMediaSession(m); // both snapshots blank by mock default
+    expect(await s.autoPick()).toBeNull();
+    expect(await s.send('playPause')).toBe(false);
+    expect(m.commands).toEqual([]);
   });
 });

@@ -66,6 +66,14 @@ export class MockMediaController implements MediaController {
       ({ playerName: 'mock', title: '', artist: '', status: 'Stopped' } as PlayerSnapshot);
     this.snapshots.set(busName, { ...prev, ...patch });
   }
+
+  /** M11/A test helper: simulate a player leaving the bus — ListNames stops
+   * advertising it AND its Properties.Get starts failing (snapshot → null),
+   * exactly like a real vanished MPRIS name. */
+  removePlayer(busName: string): void {
+    this.players = this.players.filter((p) => p !== busName);
+    this.snapshots.delete(busName);
+  }
 }
 
 export function createMockController(players?: string[]): MockMediaController {
