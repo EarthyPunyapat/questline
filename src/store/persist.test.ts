@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, readdirSy
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadState, saveStateAtomic, defaultState } from './persist.ts';
-import { migrateV2toV3 } from '../types/state.ts';
+import { migrateV2toV3, migrateV3toV4, MAX_NOTE_BODY_LEN, MAX_NOTE_TITLE_LEN } from '../types/state.ts';
 import { makeTask } from '../types/task.ts';
 
 let dir: string;
@@ -20,7 +20,7 @@ afterEach(() => {
 describe('persist', () => {
   test('missing file → default state', () => {
     const s = loadState(path);
-    expect(s.version).toBe(3);
+    expect(s.version).toBe(4);
     expect(s.tasks).toEqual([]);
     expect(s.profile.totalXp).toBe(0);
   });
@@ -58,7 +58,7 @@ describe('persist', () => {
   test('corruption guard: corrupt JSON → quarantined .bak + default returned', () => {
     writeFileSync(path, '{ this is not json !!!');
     const s = loadState(path);
-    expect(s.version).toBe(3); // default
+    expect(s.version).toBe(4); // default
     expect(s.tasks).toEqual([]);
     const backups = readdirSync(dir);
     expect(backups.some((f) => f.includes('.corrupt-') && f.endsWith('.bak'))).toBe(true);
@@ -67,11 +67,11 @@ describe('persist', () => {
   test('schema mismatch (valid JSON, wrong shape) → default + backup', () => {
     writeFileSync(path, JSON.stringify({ hello: 'world' }));
     const s = loadState(path);
-    expect(s.version).toBe(3);
+    expect(s.version).toBe(4);
     expect(readdirSync(dir).some((f) => f.includes('.corrupt-'))).toBe(true);
   });
 
-  test('v1 fixture → migrates to v3 with dailies fields present', () => {
+  test('v1 fixture → migrates to v4 with dailies fields present', () => {
     const v1 = {
       version: 1,
       tasks: [{ id: 't-1', title: 'legacy', difficulty: 'easy', status: 'todo', createdAt: 1 }],
@@ -81,9 +81,10 @@ describe('persist', () => {
     };
     writeFileSync(path, JSON.stringify(v1));
     const s = loadState(path);
-    expect(s.version).toBe(3);
+    expect(s.version).toBe(4);
     expect(s.dailies).toBeNull();
     expect(s.dailiesArchive).toEqual([]);
+    expect(s.notes).toEqual([]);
     expect(s.profile.totalXp).toBe(77);
     expect(s.tasks[0]?.title).toBe('legacy');
     expect(s.completedQuestIds).toEqual(['q-9']);
@@ -185,7 +186,8 @@ describe('v3 recurrence migration', () => {
       }),
     );
     const s = loadState(path);
-    expect(s.version).toBe(3);
+    expect(s.version).toBe(4);
+    expect(s.notes).toEqual([]);
     expect(s.profile.achievements).toEqual([{ id: 'streak-3', unlockedAt: 55 }]);
   });
 
@@ -232,5 +234,108 @@ describe('v3 recurrence migration', () => {
     for (const bad of ['t-bad1', 't-bad2', 't-bad3', 't-bad4']) {
       expect(byId.get(bad)?.recurrence).toBeUndefined();
     }
+  });
+});
+
+describe('v4 notes migration', () => {
+  test('migrateV3toV4 preserves every field incl. recurrence + achievements', () => {
+    const v3 = {
+      version: 3 as const,
+      tasks: [
+        { ...makeTask('t-1', 'chore', 'easy'), recurrence: { freq: 'daily' as const } },
+      ],
+      quests: [],
+      profile: {
+        totalXp: 250,
+        streakDays: 6,
+        lastCompletedDay: '2026-08-22',
+        achievements: [{ id: 'first-task', unlockedAt: 42 }],
+      },
+      completedQuestIds: ['q-1'],
+      dailies: { dateISO: '2026-08-22', questIds: ['t-1'], completedAll: false },
+      dailiesArchive: [{ dateISO: '2026-08-21', missedCount: 1 }],
+    };
+    const v4 = migrateV3toV4(v3);
+    expect(v4.version).toBe(4);
+    expect(v4.notes).toEqual([]);
+    expect(v4.tasks).toEqual(v3.tasks);
+    expect(v4.profile).toEqual(v3.profile);
+    expect(v4.completedQuestIds).toEqual(v3.completedQuestIds);
+    expect(v4.dailies).toEqual(v3.dailies);
+    expect(v4.dailiesArchive).toEqual(v3.dailiesArchive);
+    // pure — input untouched
+    expect(v3.version).toBe(3);
+  });
+
+  test('v3 save on disk loads as v4 with everything intact + fresh notes []', () => {
+    writeFileSync(
+      path,
+      JSON.stringify({
+        version: 3,
+        tasks: [{ ...makeTask('t-w', 'weekly review', 'medium'), recurrence: { freq: 'weekly', weekdays: [1] } }],
+        quests: [],
+        profile: {
+          totalXp: 99,
+          streakDays: 2,
+          lastCompletedDay: '2026-08-20',
+          achievements: [{ id: 'streak-3', unlockedAt: 7 }],
+        },
+        completedQuestIds: [],
+        dailies: null,
+        dailiesArchive: [{ dateISO: '2026-08-19', missedCount: 3 }],
+      }),
+    );
+    const s = loadState(path);
+    expect(s.version).toBe(4);
+    expect(s.notes).toEqual([]);
+    expect(s.tasks[0]?.recurrence).toEqual({ freq: 'weekly', weekdays: [1] });
+    expect(s.profile.achievements).toEqual([{ id: 'streak-3', unlockedAt: 7 }]);
+    expect(s.dailiesArchive).toEqual([{ dateISO: '2026-08-19', missedCount: 3 }]);
+  });
+
+  test('v4 roundtrip preserves notes; malformed rows dropped; long strings clamped', () => {
+    const s = defaultState();
+    s.notes = [
+      { id: 'n-ok', title: 'keep me', body: 'fine', createdAt: 1, updatedAt: 2, pinned: true },
+      // malformed: missing id
+      { id: '', title: 'no id', body: '', createdAt: 1, updatedAt: 1, pinned: false },
+      // malformed: wrong types
+      { id: 'n-bad1', title: 5, body: '', createdAt: 1, updatedAt: 1, pinned: false } as never,
+      { id: 'n-bad2', title: 'x', body: 'y', createdAt: 'soon', updatedAt: 1, pinned: false } as never,
+      // non-object row
+      'junk' as never,
+    ];
+    saveStateAtomic(s, path);
+    const loaded = loadState(path);
+    expect(loaded.notes.length).toBe(1);
+    expect(loaded.notes[0]).toEqual({
+      id: 'n-ok',
+      title: 'keep me',
+      body: 'fine',
+      createdAt: 1,
+      updatedAt: 2,
+      pinned: true,
+    });
+
+    // hand-edited save with over-long fields → clamped, row kept
+    writeFileSync(
+      path,
+      JSON.stringify({
+        version: 4,
+        tasks: [],
+        quests: [],
+        profile: { totalXp: 0, streakDays: 0, lastCompletedDay: null },
+        completedQuestIds: [],
+        dailies: null,
+        dailiesArchive: [],
+        notes: [
+          { id: 'n-big', title: 'T'.repeat(200), body: 'B'.repeat(5000), createdAt: 3, updatedAt: 4, pinned: false },
+        ],
+      }),
+    );
+    const clamped = loadState(path);
+    expect(clamped.notes.length).toBe(1);
+    expect(clamped.notes[0]!.title.length).toBe(MAX_NOTE_TITLE_LEN);
+    expect(clamped.notes[0]!.body.length).toBe(MAX_NOTE_BODY_LEN);
   });
 });

@@ -17,11 +17,15 @@ import { dirname, join } from 'node:path';
 import {
   DEFAULT_STATE,
   MAX_DAILY_ARCHIVE,
+  MAX_NOTE_BODY_LEN,
+  MAX_NOTE_TITLE_LEN,
   migrateV1toV2,
   migrateV2toV3,
+  migrateV3toV4,
   type DailyQuestSet,
   type GameState,
   type MissedDailyRecord,
+  type Note,
 } from '../types/state.ts';
 import type { Recurrence, Task } from '../types/task.ts';
 
@@ -96,16 +100,18 @@ function normalize(raw: unknown): GameState | undefined {
   const completedQuestIds = Array.isArray(cqiRaw)
     ? cqiRaw.filter((id): id is string => typeof id === 'string')
     : [];
-  // v1→v2→v3 migration chain: legacy saves gain dailies fields then re-version
-  // for recurrence (v3 adds only the optional Task.recurrence field).
-  let out: GameState = migrateV2toV3(
-    migrateV1toV2({
-      version: 1,
-      tasks: clone(r.tasks as GameState['tasks']),
-      quests: clone(r.quests as GameState['quests']),
-      profile,
-      completedQuestIds,
-    }),
+  // v1→v2→v3→v4 migration chain: legacy saves gain dailies fields, re-version
+  // for recurrence (v3), then gain an empty notes list (v4).
+  let out: GameState = migrateV3toV4(
+    migrateV2toV3(
+      migrateV1toV2({
+        version: 1,
+        tasks: clone(r.tasks as GameState['tasks']),
+        quests: clone(r.quests as GameState['quests']),
+        profile,
+        completedQuestIds,
+      }),
+    ),
   );
   out = { ...out, tasks: out.tasks.map(sanitizeRecurrence) };
   const dailies = parseDailies(r.dailies);
@@ -122,6 +128,11 @@ function normalize(raw: unknown): GameState | undefined {
       .slice(-MAX_DAILY_ARCHIVE);
     out = { ...out, dailiesArchive: archive };
   }
+  // v4 notes: absent container keeps the migrated []; malformed rows are
+  // dropped; over-long strings clamped to caps (never lose a whole note to
+  // one hand-edited field).
+  const notes = parseNotes(r.notes);
+  if (notes) out = { ...out, notes };
   // Achievements: migrateV1toV2 preserves any parsed unlocks (defensive ?? []
   // since f352ac8) — parseAchievements re-attaches the sanitized v2 list.
   const achievements = parseAchievements(pRaw.achievements);
@@ -141,6 +152,39 @@ function parseAchievements(
       typeof (a as Record<string, unknown>).id === 'string' &&
       typeof (a as Record<string, unknown>).unlockedAt === 'number',
   );
+}
+
+/** Defensive v4 notes reader; undefined keeps migrated default []. Malformed
+ * rows dropped; over-long strings clamped to caps (never lose a whole note
+ * because one hand-edited field is too long). */
+function parseNotes(raw: unknown): Note[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out: Note[] = [];
+  for (const row of raw) {
+    if (typeof row !== 'object' || row === null) continue;
+    const n = row as Record<string, unknown>;
+    if (
+      typeof n.id !== 'string' ||
+      n.id.length === 0 ||
+      typeof n.title !== 'string' ||
+      typeof n.body !== 'string' ||
+      typeof n.createdAt !== 'number' ||
+      !Number.isFinite(n.createdAt) ||
+      typeof n.updatedAt !== 'number' ||
+      !Number.isFinite(n.updatedAt)
+    ) {
+      continue;
+    }
+    out.push({
+      id: n.id,
+      title: n.title.slice(0, MAX_NOTE_TITLE_LEN),
+      body: n.body.slice(0, MAX_NOTE_BODY_LEN),
+      createdAt: n.createdAt,
+      updatedAt: n.updatedAt,
+      pinned: n.pinned === true,
+    });
+  }
+  return out;
 }
 
 /** Defensive v2 daily-set reader; returns null for missing/invalid shapes. */

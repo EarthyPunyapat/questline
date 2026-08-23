@@ -12,9 +12,14 @@ import { isValidTask } from '../types/task.ts';
 import {
   migrateV1toV2,
   migrateV2toV3,
+  migrateV3toV4,
+  MAX_NOTE_BODY_LEN,
+  MAX_NOTE_TITLE_LEN,
   type DailyQuestSet,
   type GameState,
+  type GameStateV3,
   type MissedDailyRecord,
+  type Note,
 } from '../types/state.ts';
 
 /** Backup copies of the live state get this suffix. */
@@ -65,10 +70,10 @@ export function parseBackup(raw: unknown): ParseBackupResult {
     return { ok: false, reason: 'top-level value is not a JSON object' };
   }
   const r = raw as Record<string, unknown>;
-  if (r.version !== 1 && r.version !== 2 && r.version !== 3) {
+  if (r.version !== 1 && r.version !== 2 && r.version !== 3 && r.version !== 4) {
     return {
       ok: false,
-      reason: `unsupported version ${JSON.stringify(r.version) ?? String(r.version)} (expected 1, 2 or 3)`,
+      reason: `unsupported version ${JSON.stringify(r.version) ?? String(r.version)} (expected 1, 2, 3 or 4)`,
     };
   }
   if (!Array.isArray(r.tasks)) {
@@ -121,7 +126,7 @@ export function parseBackup(raw: unknown): ParseBackupResult {
       typeof pRaw.lastCompletedDay === 'string' ? pRaw.lastCompletedDay : null,
   };
 
-  let out: GameState;
+  let out: GameStateV3;
   if (r.version === 1) {
     out = migrateV2toV3(
       migrateV1toV2({ version: 1, tasks, quests, profile, completedQuestIds }),
@@ -138,7 +143,41 @@ export function parseBackup(raw: unknown): ParseBackupResult {
       dailiesArchive: parseDailiesArchive(r.dailiesArchive),
     });
   }
-  return { ok: true, state: out };
+  // v4 upgrade: fresh notes [] unless the backup itself carries a v4 notes list.
+  const upgraded = migrateV3toV4(out);
+  const notes = parseNotes(r.notes);
+  return { ok: true, state: notes ? { ...upgraded, notes } : upgraded };
+}
+
+/** Defensive v4 notes reader for backups; undefined keeps migrated []. */
+function parseNotes(raw: unknown): Note[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out: Note[] = [];
+  for (const row of raw) {
+    if (typeof row !== 'object' || row === null) continue;
+    const n = row as Record<string, unknown>;
+    if (
+      typeof n.id !== 'string' ||
+      n.id.length === 0 ||
+      typeof n.title !== 'string' ||
+      typeof n.body !== 'string' ||
+      typeof n.createdAt !== 'number' ||
+      !Number.isFinite(n.createdAt) ||
+      typeof n.updatedAt !== 'number' ||
+      !Number.isFinite(n.updatedAt)
+    ) {
+      continue;
+    }
+    out.push({
+      id: n.id,
+      title: n.title.slice(0, MAX_NOTE_TITLE_LEN),
+      body: n.body.slice(0, MAX_NOTE_BODY_LEN),
+      createdAt: n.createdAt,
+      updatedAt: n.updatedAt,
+      pinned: n.pinned === true,
+    });
+  }
+  return out;
 }
 
 function parseAchievements(

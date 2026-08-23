@@ -41,7 +41,7 @@ export interface MissedDailyRecord {
 }
 
 export interface GameState {
-  version: 3;
+  version: 4;
   tasks: Task[];
   quests: Quest[];
   profile: Profile;
@@ -51,28 +51,54 @@ export interface GameState {
   dailies: DailyQuestSet | null;
   /** Past sets not fully completed; most recent last, capped at MAX_DAILY_ARCHIVE. */
   dailiesArchive: MissedDailyRecord[];
+  /** User notes (v4); display order computed at render (see store/notes.ts). */
+  notes: Note[];
 }
+
+/** One user note (v4). Content edits touch `updatedAt`; pinning is purely
+ * organizational and does NOT count as a content edit. */
+export interface Note {
+  id: string;
+  title: string;
+  body: string;
+  createdAt: number; // epoch ms
+  updatedAt: number; // epoch ms
+  pinned: boolean;
+}
+
+/** Hard caps enforced by store validators (user input longer is REJECTED,
+ * never silently truncated); the defensive loader clamps instead so a
+ * hand-edited save never loses whole notes. */
+export const MAX_NOTE_TITLE_LEN = 80;
+export const MAX_NOTE_BODY_LEN = 2000;
 
 export const MAX_DAILY_ARCHIVE = 30;
 
 export const DEFAULT_STATE: GameState = {
-  version: 3,
+  version: 4,
   tasks: [],
   quests: [],
   profile: { totalXp: 0, streakDays: 0, lastCompletedDay: null, achievements: [] },
   completedQuestIds: [],
   dailies: null,
   dailiesArchive: [],
+  notes: [],
 };
 
 /** Legacy v1 shape (pre-dailies) as found in old state.json files. */
 export interface GameStateV1
-  extends Omit<GameState, 'version' | 'dailies' | 'dailiesArchive' | 'achievements'> {
+  extends Omit<
+    GameState,
+    'version' | 'dailies' | 'dailiesArchive' | 'notes'
+  > {
   version: 1;
 }
 
-/** v2 shape (dailies, pre-recurrence). */
-export type GameStateV2 = Omit<GameState, 'version'> & { version: 2 };
+/** v2 shape (dailies, pre-recurrence, pre-notes). */
+export type GameStateV2 = Omit<GameState, 'version' | 'notes'> & { version: 2 };
+
+/** v3 shape (recurrence, pre-notes). */
+export type GameStateV3 = Omit<GameState, 'version' | 'notes'> & { version: 3 };
 
 /** Upgrade a v1 save to v2: fresh empty dailies fields, everything else kept.
  * Achievements are preserved when present (defensive default for odd inputs). */
@@ -89,6 +115,13 @@ export function migrateV1toV2(v1: GameStateV1): GameStateV2 {
 /** Upgrade a v2 save to v3 (recurrence): pure re-version — `recurrence` is
  * optional on Task, so absent fields need no transform. Every v2 field,
  * including profile.achievements and the dailies archive, is preserved. */
-export function migrateV2toV3(v2: GameStateV2): GameState {
+export function migrateV2toV3(v2: GameStateV2): GameStateV3 {
   return { ...v2, version: 3 };
+}
+
+/** Upgrade a v3 save to v4 (notes): fresh empty notes list, everything else
+ * kept — tasks with recurrence + achievements, dailies set and archive all
+ * preserved verbatim (same defensive spirit as migrateV1toV2). */
+export function migrateV3toV4(v3: GameStateV3): GameState {
+  return { ...v3, version: 4, notes: [] };
 }
