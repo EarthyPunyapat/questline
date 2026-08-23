@@ -2,6 +2,7 @@
 import { describe, expect, test } from 'bun:test';
 import { DIFFICULTIES } from '../../types/task.ts';
 import {
+  DUE_CYCLE,
   INITIAL_STATE,
   MAX_TITLE_LEN,
   REC_CYCLE,
@@ -57,6 +58,7 @@ describe('wizard phase 1 (free typing)', () => {
       diffIdx: 1,
       recIdx: 0,
       weekdays: [],
+      dueIdx: 0,
     });
     expect(DIFFICULTIES[1]).toBe('medium');
     expect(REC_CYCLE[0]).toBe('none');
@@ -179,5 +181,39 @@ describe('pure helpers', () => {
     expect(buildRecurrence(0, [])).toBeUndefined();
     expect(buildRecurrence(1, [])).toEqual({ freq: 'daily' });
     expect(buildRecurrence(2, [6, 0, 3])).toEqual({ freq: 'weekly', weekdays: [0, 3, 6] });
+  });
+});
+
+describe('M11/B due cycle (key u in options phase)', () => {
+  test('u cycles none -> today -> tomorrow -> next-week -> none', () => {
+    let s = toOptions();
+    expect(DUE_CYCLE[s.dueIdx]).toBe('none');
+    for (const want of ['today', 'tomorrow', 'next-week', 'none'] as const) {
+      s = press(s, 'u').state as Extract<ModalState, { phase: 'options' }>;
+      expect(DUE_CYCLE[s.dueIdx]).toBe(want);
+    }
+  });
+
+  test('submit carries the chosen due spec; none omits the key', () => {
+    let s = toOptions();
+    const none = press(s, '', k({ return: true })).effect;
+    expect(none.kind === 'submit' && 'due' in none).toBe(false);
+
+    s = press(s, 'u').state as Extract<ModalState, { phase: 'options' }>;
+    const today = press(s, '', k({ return: true })).effect;
+    expect(today).toMatchObject({ kind: 'submit', due: 'today' });
+
+    // two more presses -> next-week
+    s = press(press(s, 'u').state, 'u').state as Extract<
+      ModalState,
+      { phase: 'options' }
+    >;
+    const nw = press(s, '', k({ return: true })).effect;
+    expect(nw).toMatchObject({ kind: 'submit', due: 'next-week' });
+  });
+
+  test('M9 regression guard: u while typing a title is TEXT, not a command', () => {
+    const typed = type(INITIAL_STATE, 'unplug the uke at noon');
+    expect(typed).toEqual({ phase: 'title', title: 'unplug the uke at noon' });
   });
 });

@@ -6,9 +6,10 @@ import {
   getTask,
   listByStatus,
   selectNextId,
+  sortedForDisplay,
   toggleDone,
 } from './tasks.ts';
-import { makeTask } from '../types/task.ts';
+import { makeTask, type Task } from '../types/task.ts';
 import { defaultState } from '../store/persist.ts';
 import type { GameState } from '../types/state.ts';
 
@@ -126,5 +127,52 @@ describe('canDelete (M9 blocker feedback)', () => {
     const res = canDelete(undefined);
     expect(res.ok).toBe(false);
     expect(res.reason).toBeTruthy();
+  });
+});
+
+describe('M11/B due dates', () => {
+  test('addTask persists an optional dueDate immutably', () => {
+    const s1 = addTask(base(), 'water plants', 'easy', undefined, undefined, '2026-09-01');
+    expect(s1.tasks[0]!.dueDate).toBe('2026-09-01');
+  });
+
+  test('overdue and due-today todos float above undated todos', () => {
+    const today = '2026-08-23';
+    const s0 = base();
+    const mk = (id: string, due?: string): Task =>
+      ({ ...makeTask(id, id, 'easy'), createdAt: Number(id.slice(2)) , ...(due ? { dueDate: due } : {}) });
+    const s1: GameState = {
+      ...s0,
+      tasks: [
+        mk('10-undated'),
+        mk('20-overdue', '2026-08-20'),
+        mk('30-dueToday', today),
+        mk('40-future', '2026-09-15'),
+      ],
+    };
+    const ids = sortedForDisplay(s1.tasks, today).map((t) => t.id);
+    // urgency tier 0 (due <= today) keeps its own stable order, then tier 1.
+    expect(ids).toEqual(['20-overdue', '30-dueToday', '10-undated', '40-future']);
+  });
+
+  test('done task with a past due date sinks back with finished work', () => {
+    const today = '2026-08-23';
+    const done = {
+      ...makeTask('t-done', 'was overdue', 'easy'),
+      status: 'done' as const,
+      completedAt: 5,
+      dueDate: '2026-07-01',
+    };
+    const todo = { ...makeTask('t-todo', 'fresh', 'easy'), createdAt: 9 };
+    const out = sortedForDisplay([done, todo], today).map((t) => t.id);
+    expect(out).toEqual(['t-todo', 't-done']);
+  });
+
+  test('tier tie-break stays stable by createdAt', () => {
+    const today = '2026-08-23';
+    const a = { ...makeTask('t-a', 'a', 'easy'), createdAt: 2 };
+    const b = { ...makeTask('t-b', 'b', 'easy'), createdAt: 1 };
+    const out = sortedForDisplay([a, b], today).map((t) => t.id);
+    expect(out).toEqual(['t-b', 't-a']);
   });
 });

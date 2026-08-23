@@ -47,7 +47,7 @@ export function Calendar({
             }
             const day = Number(cell.slice(-2));
             const label = String(day).padStart(2, ' ');
-            const { completions } = dayActivity(state, cell);
+            const { completions, dueCount } = dayActivity(state, cell);
             const hot = completions >= 3;
             const warm = completions >= 1 && !hot;
             return (
@@ -56,10 +56,11 @@ export function Calendar({
                   inverse={cell === todayISO}
                   bold={hot || cell === todayISO}
                   color={warm ? theme.accent : hot ? theme.accent : undefined}
-                  dimColor={warm}
+                  dimColor={warm && dueCount === 0}
                 >
                   {label}
                 </Text>
+                {dueCount > 0 && <Text color={theme.warn}>•</Text>}
               </Box>
             );
           })}

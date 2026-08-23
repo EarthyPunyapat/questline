@@ -29,6 +29,18 @@ export const BADGE: Record<RecMode, string> = {
   weekly: '⟳ weekly',
 };
 
+/** M11/B due-day cycle (phase 2 key 'u'): none → today → tomorrow → next-week. */
+export type DueMode = 'none' | 'today' | 'tomorrow' | 'next-week';
+
+export const DUE_CYCLE: readonly DueMode[] = ['none', 'today', 'tomorrow', 'next-week'];
+
+export const DUE_BADGE: Record<DueMode, string> = {
+  none: '',
+  today: '⏰ due today',
+  tomorrow: '⏰ due tomorrow',
+  'next-week': '⏰ due next week',
+};
+
 /** Display order Mon..Sun; stored as JS dow numbers (1..6, 0 for Sun). */
 export const DAY_LABELS: ReadonlyArray<{ label: string; dow: number }> = [
   { label: 'Mo', dow: 1 },
@@ -52,6 +64,8 @@ export interface OptionsPhase {
   diffIdx: number;
   recIdx: number;
   weekdays: number[];
+  /** M11/B index into DUE_CYCLE (0 = no due date). */
+  dueIdx: number;
 }
 
 export type ModalState = TitlePhase | OptionsPhase;
@@ -59,7 +73,15 @@ export type ModalState = TitlePhase | OptionsPhase;
 export type ModalEffect =
   | { kind: 'none' }
   | { kind: 'cancel' }
-  | { kind: 'submit'; title: string; difficulty: Difficulty; recurrence?: Recurrence }
+  | {
+      kind: 'submit';
+      title: string;
+      difficulty: Difficulty;
+      recurrence?: Recurrence;
+      /** Due mode chosen in the cycle; component resolves it to a LOCAL ISO
+       * day (clock belongs to the edge, not the pure reducer). */
+      due?: DueMode;
+    }
   | { kind: 'warn'; message: string };
 
 /** Structural subset of Ink's `Key` object (keeps this module Ink-free). */
@@ -118,16 +140,17 @@ export function reduceModal(
     if (key.return) {
       // Advance only with something to name the quest after.
       if (state.title.trim().length > 0) {
-        return {
-          state: {
-            phase: 'options',
-            title: state.title,
-            diffIdx: DEFAULT_DIFF_IDX,
-            recIdx: 0,
-            weekdays: [],
-          },
-          effect: { kind: 'none' },
-        };
+      return {
+        state: {
+          phase: 'options',
+          title: state.title,
+          diffIdx: DEFAULT_DIFF_IDX,
+          recIdx: 0,
+          weekdays: [],
+          dueIdx: 0,
+        },
+        effect: { kind: 'none' },
+      };
       }
       return { state, effect: { kind: 'none' } };
     }
@@ -168,6 +191,12 @@ export function reduceModal(
       effect: { kind: 'none' },
     };
   }
+  if (input === 'u') {
+    return {
+      state: { ...state, dueIdx: (state.dueIdx + 1) % DUE_CYCLE.length },
+      effect: { kind: 'none' },
+    };
+  }
   const mode = REC_CYCLE[state.recIdx] as RecMode;
   // Weekly picker: digits 1-7 map to Mon..Sun (7 → Sunday/dow 0). Weekly only.
   if (mode === 'weekly' && input >= '1' && input <= '7') {
@@ -181,6 +210,7 @@ export function reduceModal(
     if (mode === 'weekly' && state.weekdays.length === 0) {
       return { state, effect: { kind: 'warn', message: WEEKLY_WARNING } };
     }
+    const due = DUE_CYCLE[state.dueIdx] as DueMode;
     return {
       state,
       effect: {
@@ -188,6 +218,7 @@ export function reduceModal(
         title: state.title.trim(),
         difficulty: DIFFICULTIES[state.diffIdx] as Difficulty,
         recurrence: buildRecurrence(state.recIdx, state.weekdays),
+        ...(due !== 'none' ? { due } : {}),
       },
     };
   }

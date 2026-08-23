@@ -8,6 +8,7 @@ import {
   type TaskStatus,
 } from '../types/task.ts';
 import type { GameState } from '../types/state.ts';
+import { localDateStr } from '../xp/streaks.ts';
 
 export function addTask(
   state: GameState,
@@ -15,8 +16,9 @@ export function addTask(
   difficulty: Difficulty = 'medium',
   questId?: string,
   recurrence?: Recurrence,
+  dueDate?: string,
 ): GameState {
-  const task = makeTask(nextId(), title.trim(), difficulty, questId, recurrence);
+  const task = makeTask(nextId(), title.trim(), difficulty, questId, recurrence, dueDate);
   return { ...state, tasks: [...state.tasks, task] };
 }
 
@@ -78,9 +80,18 @@ export function getTask(state: GameState, id: string): Task | undefined {
   return state.tasks.find((t) => t.id === id);
 }
 
-/** Display order: todos first by createdAt; done after, most recent completion last. */
-export function sortedForDisplay(tasks: readonly Task[]): Task[] {
+/**
+ * Display order (M11/B): among todos, tasks due today or overdue float to the
+ * top; done rows stay after. Within each class the original rules hold
+ * (done: most recent completion first; todos: stable createdAt tie-break).
+ */
+export function sortedForDisplay(tasks: readonly Task[], todayISO: string = localDateStr()): Task[] {
+  const urgency = (t: Task): number =>
+    t.status !== 'todo' ? 2 : t.dueDate !== undefined && t.dueDate <= todayISO ? 0 : 1;
   return [...tasks].sort((a, b) => {
+    const ua = urgency(a);
+    const ub = urgency(b);
+    if (ua !== ub) return ua - ub;
     if (a.status !== b.status) return a.status === 'todo' ? -1 : 1;
     const ca = a.completedAt ?? 0;
     const cb = b.completedAt ?? 0;

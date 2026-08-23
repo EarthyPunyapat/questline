@@ -7,6 +7,8 @@ import { XP_TABLE } from '../types/task.ts';
 export interface DayActivity {
   completions: number;
   xpGained: number;
+  /** Tasks whose dueDate lands on this day, done or not (M11/B). */
+  dueCount: number;
 }
 
 const MONTHS = [
@@ -73,5 +75,14 @@ export function dayActivity(state: GameState, dateISO: string): DayActivity {
     completions += 1;
     xpGained += XP_TABLE[t.difficulty];
   }
-  return { completions, xpGained };
+  return { completions, xpGained, dueCount: dueOn(state, dateISO) };
+}
+
+/** Tasks due on a LOCAL calendar day, regardless of done/todo status. */
+export function dueOn(state: GameState, dateISO: string): number {
+  let n = 0;
+  for (const t of state.tasks) {
+    if (t.dueDate === dateISO) n += 1;
+  }
+  return n;
 }

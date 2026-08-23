@@ -5,6 +5,7 @@ import { makeTask, type Task } from '../types/task.ts';
 import {
   buildMonthGrid,
   dayActivity,
+  dueOn,
   monthLabel,
   toDayISO,
 } from './logic.ts';
@@ -92,6 +93,7 @@ describe('dayActivity', () => {
     expect(dayActivity(state, '2026-08-22')).toEqual({
       completions: 3,
       xpGained: 85,
+      dueCount: 0,
     });
   });
 
@@ -103,10 +105,11 @@ describe('dayActivity', () => {
         { ...makeTask('t2', 'open', 'medium') }, // status todo
       ],
     };
-    expect(dayActivity(state, '2026-08-21')).toEqual({ completions: 0, xpGained: 0 });
+    expect(dayActivity(state, '2026-08-21')).toEqual({ completions: 0, xpGained: 0, dueCount: 0 });
     expect(dayActivity(DEFAULT_STATE, '2026-08-22')).toEqual({
       completions: 0,
       xpGained: 0,
+      dueCount: 0,
     });
   });
 
@@ -121,6 +124,7 @@ describe('dayActivity', () => {
     expect(dayActivity(state, '2026-08-22')).toEqual({
       completions: 1,
       xpGained: 10,
+      dueCount: 0,
     });
   });
 
@@ -133,5 +137,32 @@ describe('dayActivity', () => {
     };
     expect(dayActivity(state, '2026-08-22').completions).toBe(1);
     expect(dayActivity(state, '2026-08-23').completions).toBe(0);
+  });
+});
+
+describe('M11/B due-date markers', () => {
+  const aug22 = new Date(2026, 7, 22, 15).getTime();
+  test('dueOn counts tasks due that day, done or not', () => {
+    const due = makeTask('d-a', 'due today', 'easy', undefined, undefined, '2026-08-22');
+    const dueDone: Task = {
+      ...makeTask('d-b', 'due and done', 'hard', undefined, undefined, '2026-08-22'),
+      status: 'done',
+      completedAt: aug22,
+    };
+    const otherDay = makeTask('d-c', 'other day', 'easy', undefined, undefined, '2026-08-23');
+    const noDue = makeTask('d-d', 'whenever', 'easy');
+    const state: GameState = { ...DEFAULT_STATE, tasks: [due, dueDone, otherDay, noDue] };
+    expect(dueOn(state, '2026-08-22')).toBe(2);
+    expect(dueOn(state, '2026-08-23')).toBe(1);
+    expect(dueOn(state, '2026-08-24')).toBe(0);
+  });
+
+  test('dayActivity reports dueCount alongside completions', () => {
+    const dueTodo = makeTask('e-a', 'due todo', 'medium', undefined, undefined, '2026-08-22');
+    const state: GameState = { ...DEFAULT_STATE, tasks: [dueTodo] };
+    const act = dayActivity(state, '2026-08-22');
+    expect(act.dueCount).toBe(1);
+    expect(act.completions).toBe(0); // due-but-todo is NOT a completion
+    expect(dayActivity(DEFAULT_STATE, '2026-08-22').dueCount).toBe(0);
   });
 });

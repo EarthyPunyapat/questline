@@ -1,6 +1,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import type { Task } from '../../types/task.ts';
+import { localDateStr } from '../../xp/streaks.ts';
 import { difficultyColor, difficultyLabel, theme } from '../theme.ts';
 
 interface TaskListProps {
@@ -10,6 +11,7 @@ interface TaskListProps {
 }
 
 export function TaskList({ tasks, selectedId, maxRows = 12 }: TaskListProps): React.ReactElement {
+  const todayISO = localDateStr();
   if (tasks.length === 0) {
     return (
       <Box flexDirection="column" paddingX={1}>
@@ -25,6 +27,7 @@ export function TaskList({ tasks, selectedId, maxRows = 12 }: TaskListProps): Re
       {tasks.slice(0, maxRows).map((t) => {
         const sel = t.id === selectedId;
         const marker = t.status === 'done' ? '✓' : sel ? '▶' : ' ';
+        const overdue = t.status === 'todo' && t.dueDate !== undefined && t.dueDate < todayISO;
         return (
           <Box key={t.id}>
             <Box width={2}>
@@ -39,12 +42,18 @@ export function TaskList({ tasks, selectedId, maxRows = 12 }: TaskListProps): Re
               </Text>
             </Box>
             <Text
-              color={t.status === 'done' ? theme.muted : undefined}
+              color={t.status === 'done' ? theme.muted : overdue ? 'red' : undefined}
               strikethrough={t.status === 'done'}
-              bold={sel}
+              bold={sel || overdue}
             >
-              {sel ? t.title : ` ${t.title}`}
+              {sel || overdue ? t.title : ` ${t.title}`}
             </Text>
+            {t.dueDate !== undefined && (
+              <Text color={overdue ? 'red' : theme.warn} bold={overdue}>
+                {' '}
+                ⏰{t.dueDate.slice(5)}
+              </Text>
+            )}
           </Box>
         );
       })}

@@ -4,20 +4,31 @@ import {
   DIFFICULTIES,
   type Difficulty,
   type Recurrence,
+  resolveDueSpec,
 } from '../../types/task.ts';
+import { localDateStr } from '../../xp/streaks.ts';
 import { difficultyColor, theme } from '../theme.ts';
 import {
   BADGE,
   DAY_LABELS,
+  DUE_BADGE,
+  DUE_CYCLE,
   INITIAL_STATE,
   REC_CYCLE,
   reduceModal,
+  type DueMode,
   type ModalState,
   type RecMode,
 } from './addTaskWizard.ts';
 
 interface AddTaskModalProps {
-  onSubmit: (title: string, difficulty: Difficulty, recurrence?: Recurrence) => void;
+  onSubmit: (
+    title: string,
+    difficulty: Difficulty,
+    recurrence?: Recurrence,
+    /** LOCAL 'YYYY-MM-DD' — resolved here from the chosen cycle mode. */
+    dueDate?: string,
+  ) => void;
   onCancel: () => void;
 }
 
@@ -43,7 +54,11 @@ export function AddTaskModal({ onSubmit, onCancel }: AddTaskModalProps): React.R
       setModal(next.state);
       const fx = next.effect;
       if (fx.kind === 'cancel') onCancel();
-      else if (fx.kind === 'submit') onSubmit(fx.title, fx.difficulty, fx.recurrence);
+      else if (fx.kind === 'submit') {
+        const dueDate =
+          fx.due !== undefined ? resolveDueSpec(fx.due, localDateStr()) : undefined;
+        onSubmit(fx.title, fx.difficulty, fx.recurrence, dueDate);
+      }
     },
     { isActive: true },
   );
@@ -51,6 +66,8 @@ export function AddTaskModal({ onSubmit, onCancel }: AddTaskModalProps): React.R
   const recMode: RecMode =
     modal.phase === 'options' ? REC_CYCLE[modal.recIdx] as RecMode : 'none';
   const diffIdx = modal.phase === 'options' ? modal.diffIdx : -1;
+  const dueMode: DueMode =
+    modal.phase === 'options' ? DUE_CYCLE[modal.dueIdx] as DueMode : 'none';
 
   return (
     <Box
@@ -94,6 +111,9 @@ export function AddTaskModal({ onSubmit, onCancel }: AddTaskModalProps): React.R
             <Text color={recMode === 'none' ? theme.muted : theme.accent} bold={recMode !== 'none'}>
               {BADGE[recMode]}
             </Text>
+            <Text color={dueMode === 'none' ? theme.muted : theme.warn} bold={dueMode !== 'none'}>
+              {DUE_BADGE[dueMode]}
+            </Text>
           </Box>
           {recMode === 'weekly' && (
             <Box gap={1} marginTop={1}>
@@ -116,7 +136,8 @@ export function AddTaskModal({ onSubmit, onCancel }: AddTaskModalProps): React.R
           )}
           <Box marginTop={1}>
             <Text dimColor>
-              tab/←→: difficulty · r: repeat ({recMode}) · enter: add · esc: edit title
+              tab/←→: difficulty · r: repeat ({recMode}) · u: due ({dueMode}) · enter: add · esc:
+              edit title
               {recMode === 'weekly' ? ' · 1-7: pick days' : ''}
             </Text>
           </Box>

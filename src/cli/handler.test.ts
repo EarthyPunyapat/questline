@@ -205,6 +205,8 @@ describe('format helpers', () => {
     expect(formatTaskRow(3, todo)).toBe('3. [M] alpha (t-aa11bb22)');
     const doneT = { ...todo, status: 'done' as const };
     expect(formatTaskRow(1, doneT)).toBe('1. [M] alpha (t-aa11bb22) ✓');
+    const dueT = makeTask('t-cc33dd44', 'dated', 'easy', undefined, undefined, '2026-09-01');
+    expect(formatTaskRow(2, dueT)).toBe('2. [E] dated (t-cc33dd44) ⏰09-01');
   });
 
   test('xpBar clamps fraction and handles zero-divide', () => {

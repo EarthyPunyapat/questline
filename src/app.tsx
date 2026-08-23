@@ -455,10 +455,10 @@ export function App(): React.ReactElement {
         <HelpOverlay onDone={() => setMode('normal')} />
       ) : mode === 'adding' ? (
         <AddTaskModal
-          onSubmit={(title, difficulty: Difficulty, recurrence) => {
+          onSubmit={(title, difficulty: Difficulty, recurrence, dueDate) => {
             // Select from the NEXT state — the pre-add `state` closure would
             // never contain the new task (SYNC-2).
-            const next = addTask(state, title, difficulty, undefined, recurrence);
+            const next = addTask(state, title, difficulty, undefined, recurrence, dueDate);
             commit(next);
             setMode('normal');
             setSelectedId(sortedForDisplay(next.tasks).at(-1)?.id ?? undefined);

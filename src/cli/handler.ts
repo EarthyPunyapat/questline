@@ -4,7 +4,7 @@
 import { loadState, saveStateAtomic, statePath } from '../store/persist.ts';
 import { addTask, getTask, sortedForDisplay, toggleDone } from '../store/tasks.ts';
 import type { Difficulty, Task } from '../types/task.ts';
-import { DIFFICULTIES, xpValue } from '../types/task.ts';
+import { DIFFICULTIES, resolveDueSpec, xpValue } from '../types/task.ts';
 import type { GameState } from '../types/state.ts';
 import { advanceStreak, localDateStr, streakMultiplier } from '../xp/streaks.ts';
 import { awardXp } from '../xp/engine.ts';
@@ -97,21 +97,37 @@ function usageCli(msg: string): CliOutcome {
 
 function cmdAdd(rest: readonly string[]): CliOutcome {
   let difficulty: Difficulty | undefined;
+  let dueDate: string | undefined;
   const words: string[] = [];
-  for (const a of rest) {
+  for (let i = 0; i < rest.length; i++) {
+    const a = rest[i]!;
     if (DIFFICULTIES.some((d) => `--${d}` === a)) {
       difficulty = a.slice(2) as Difficulty;
+    } else if (a === '--due') {
+      const spec = rest[i + 1];
+      if (spec === undefined || spec.startsWith('--')) {
+        return usageCli('--due requires a value (today|tomorrow|next-week|YYYY-MM-DD)');
+      }
+      const resolved = resolveDueSpec(spec, localDateStr());
+      if (resolved === undefined) {
+        return usageCli(`invalid --due value '${spec}' (want today|tomorrow|next-week|YYYY-MM-DD)`);
+      }
+      dueDate = resolved;
+      i += 1;
     } else if (!a.startsWith('--')) {
       words.push(a);
+    } else {
+      return usageCli(`unknown flag '${a}'`);
     }
   }
   const title = words.join(' ').trim();
   if (title.length === 0) return usageCli('add requires a <title>');
   let state = bootState();
-  state = addTask(state, title, difficulty ?? 'medium');
+  state = addTask(state, title, difficulty ?? 'medium', undefined, undefined, dueDate);
   saveStateAtomic(state, statePath());
   const t = state.tasks.at(-1)!;
-  return { code: 0, stdout: `added ${t.id} ${t.title} (${t.difficulty})` };
+  const dueNote = t.dueDate !== undefined ? ` due ${t.dueDate}` : '';
+  return { code: 0, stdout: `added ${t.id} ${t.title} (${t.difficulty})${dueNote}` };
 }
 
 /** Regular (non-daily) tasks in display order — the same rows the TUI lists. */

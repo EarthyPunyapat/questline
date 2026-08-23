@@ -8,12 +8,14 @@ export function difficultyTag(d: Difficulty): 'E' | 'M' | 'H' {
 }
 
 /**
- * `<index>. [<E|M|H>] title (id)` — done rows get a trailing ✓.
+ * `<index>. [<E|M|H>] title (id)` — done rows get a trailing ✓; dated rows
+ * get the same ⏰MM-DD badge the TUI task list shows (M11/B).
  * Index is 1-based and matches the order produced by sortedForDisplay.
  */
 export function formatTaskRow(index: number, t: Task): string {
   const check = t.status === 'done' ? ' ✓' : '';
-  return `${index}. [${difficultyTag(t.difficulty)}] ${t.title} (${t.id})${check}`;
+  const due = t.dueDate !== undefined ? ` ⏰${t.dueDate.slice(5)}` : '';
+  return `${index}. [${difficultyTag(t.difficulty)}] ${t.title} (${t.id})${check}${due}`;
 }
 
 /** Unicode progress bar: filled █ for the fraction, ░ padding, width chars. */
