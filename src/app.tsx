@@ -40,8 +40,19 @@ import { LevelUpToast } from './ui/layout/LevelUpToast.tsx';
 import { HelpOverlay } from './ui/layout/HelpOverlay.tsx';
 import { StatsView } from './views/StatsView.tsx';
 import { NowPlaying, type PlayerSnapshot } from './ui/layout/NowPlaying.tsx';
+import { Calendar } from './ui/layout/Calendar.tsx';
+import { Notes } from './ui/layout/Notes.tsx';
+import { NoteEditor } from './ui/layout/NoteEditor.tsx';
+import { createNote, deleteNote, sortNotes, togglePin, updateNote } from './store/notes.ts';
+import type { Note } from './types/state.ts';
+import {
+  POMODORO_SECS,
+  POMODORO_XP,
+  isPomodoroComplete,
+  tickRemaining,
+} from './pomodoro/logic.ts';
 
-type Mode = 'normal' | 'adding' | 'help';
+type Mode = 'normal' | 'adding' | 'help' | 'notes';
 
 export function App(): React.ReactElement {
   const { exit } = useApp();
@@ -82,6 +93,14 @@ export function App(): React.ReactElement {
   const mediaRef = React.useRef<ActiveMediaSession | null>(null);
   const [players, setPlayers] = useState<readonly PlayerChoice[]>([]);
   const [activeLabel, setActiveLabel] = useState<string | null>(null);
+  // M10: calendar panel replaces the board exactly like stats does.
+  const [showCal, setShowCal] = useState(false);
+  // M10: notes overlay — list cursor + open editor ({note} edit, {} new).
+  const [noteSel, setNoteSel] = useState(0);
+  const [noteEdit, setNoteEdit] = useState<{ note?: Note } | null>(null);
+  // M10/T10.D: null = no session; remainingSec===0 && !running = finished.
+  const [pomo, setPomo] = useState<{ remainingSec: number; running: boolean } | null>(null);
+  const pomoAwardedRef = React.useRef(false);
 
   // M3: resolve a media controller once, then poll snapshots (1s — cheap busctl/dbus reads).
   useEffect(() => {
@@ -193,6 +212,38 @@ export function App(): React.ReactElement {
     [],
   );
 
+  // M10/T10.D: 1s ticker while running; auto-stops when the clock hits zero.
+  useEffect(() => {
+    if (!pomo?.running) return;
+    const id = setInterval(() => {
+      setPomo((prev) => {
+        if (!prev || !prev.running) return prev;
+        const nr = tickRemaining(prev.remainingSec);
+        return { ...prev, remainingSec: nr, running: nr > 0 };
+      });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [pomo?.running]);
+
+  // M10/T10.D: flat +15 XP exactly once per completed session.
+  useEffect(() => {
+    if (!pomo || pomo.running || !isPomodoroComplete(pomo.remainingSec)) return;
+    if (pomoAwardedRef.current) return;
+    pomoAwardedRef.current = true;
+    const levelBefore = levelCurve(state.profile.totalXp).level;
+    const next: typeof state = {
+      ...state,
+      profile: { ...state.profile, totalXp: state.profile.totalXp + POMODORO_XP },
+    };
+    commit(next);
+    const levelAfter = levelCurve(next.profile.totalXp).level;
+    const parts: string[] = [];
+    if (levelAfter > levelBefore) parts.push(`LEVEL UP → ${levelAfter}!`);
+    parts.push(formatXpGain(POMODORO_XP, 1));
+    setFlash({ key: Date.now(), text: '🍅 Pomodoro complete!' });
+    setToast({ key: Date.now(), message: parts.join('  ') });
+  }, [pomo, state, commit]);
+
   useInput(
     (input, key) => {
       if (mode !== 'normal') return; // modal owns the keyboard
@@ -256,6 +307,22 @@ export function App(): React.ReactElement {
       }
       if (input === '?') return setMode('help');
       if (input === 'v') return setShowStats((s) => !s);
+      // M10: calendar panel toggle (independent of stats).
+      if (input === 'c') return setShowCal((s) => !s);
+      // M10: notes overlay — uppercase only; lowercase n stays media-next.
+      if (input === 'N') {
+        setNoteSel(0);
+        return setMode('notes');
+      }
+      // M10/T10.D: start a fresh 25:00 or pause/resume the current one.
+      if (input === 'p') {
+        setPomo((prev) =>
+          prev
+            ? { ...prev, running: !prev.running && prev.remainingSec > 0 }
+            : { remainingSec: POMODORO_SECS, running: true },
+        );
+        return;
+      }
       if (input === 't') {
         cycleTheme();
         bumpThemeTick((n) => n + 1);
@@ -263,6 +330,7 @@ export function App(): React.ReactElement {
       }
       if (key.escape) {
         setShowStats(false);
+        setShowCal(false);
         return;
       }
       // T8.3: tab cycles between visible players (>1 only; sticky choice).
@@ -284,13 +352,45 @@ export function App(): React.ReactElement {
     { isActive: mode === 'normal' },
   );
 
+  // M10: keys for the notes LIST (the editor owns input once it opens).
+  useInput(
+    (input, key) => {
+      const sorted = sortNotes(state.notes);
+      if (input === 'q' || key.escape) {
+        setNoteEdit(null);
+        return setMode('normal');
+      }
+      if (input === 'n') return setNoteEdit({});
+      if (input === 'j' || key.downArrow) {
+        return setNoteSel((i) => Math.min(sorted.length - 1, i + 1));
+      }
+      if (input === 'k' || key.upArrow) return setNoteSel((i) => Math.max(0, i - 1));
+      const sel = sorted[noteSel];
+      if (!sel) return;
+      if (input === 'e') return setNoteEdit({ note: sel });
+      if (input === 'p') return commit(togglePin(state, sel.id));
+      if (input === 'd' || key.delete) {
+        commit(deleteNote(state, sel.id));
+        setNoteSel((i) => Math.max(0, Math.min(i, sorted.length - 2)));
+      }
+    },
+    { isActive: mode === 'notes' && noteEdit === null },
+  );
+
   return (
     <Box flexDirection="column" gap={1}>
-      <Header profile={state.profile} />
+      <Header profile={state.profile} pomodoro={pomo ?? undefined} />
       {showStats ? (
         <Box borderStyle="round" borderColor="cyan">
           <StatsView state={state} />
         </Box>
+      ) : showCal ? (
+        <Calendar
+          state={state}
+          year={new Date().getFullYear()}
+          monthIdx={new Date().getMonth()}
+          bordered
+        />
       ) : (
         <Box gap={2}>
           <Box borderStyle="round" borderColor="green" flexDirection="column" width="62%">
@@ -333,6 +433,31 @@ export function App(): React.ReactElement {
           }}
           onCancel={() => setMode('normal')}
         />
+      ) : mode === 'notes' ? (
+        noteEdit ? (
+          <NoteEditor
+            initial={noteEdit.note}
+            onSave={(title, body) => {
+              commit(
+                noteEdit.note
+                  ? updateNote(state, noteEdit.note.id, { title, body }, Date.now())
+                  : createNote(state, title, body, Date.now()),
+              );
+              setNoteEdit(null);
+            }}
+            onCancel={() => setNoteEdit(null)}
+          />
+        ) : (
+          <Box borderStyle="round" borderColor="cyan" flexDirection="column" paddingX={1}>
+            <Text bold color="cyan">
+              NOTES
+            </Text>
+            <Notes notes={state.notes} />
+            <Text dimColor>
+              n new · e edit · p pin · d delete · j/k move · esc back
+            </Text>
+          </Box>
+        )
       ) : (
         <Footer />
       )}
