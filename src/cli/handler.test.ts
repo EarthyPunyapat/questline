@@ -235,3 +235,35 @@ describe('format helpers', () => {
     expect(lines[6]).toContain('▇'.repeat(8) + ' 40xp'); // max bucket full
   });
 });
+
+describe('note (S12.D2)', () => {
+  test('creates a note via store + atomic save, prints saved id rc0', () => {
+    const res = run(['note', 'hello world']);
+    expect(res.code).toBe(0);
+    expect(res.stdout).toMatch(/^note saved n-/);
+    const s = loadState();
+    expect(s.notes.length).toBe(1);
+    expect(s.notes[0]!.title).toBe('hello world');
+    expect(s.notes[0]!.body).toBe('');
+  });
+
+  test('semicolon splits title and body (both trimmed)', () => {
+    const res = run(['note', 'buy milk;  2% lactose-free ']);
+    expect(res.code).toBe(0);
+    const s = loadState();
+    expect(s.notes[0]!.title).toBe('buy milk');
+    expect(s.notes[0]!.body).toBe('2% lactose-free');
+  });
+
+  test('missing argument exits 1 with usage hint', () => {
+    const res = run(['note']);
+    expect(res.code).toBe(1);
+    expect(res.stderr).toContain('requires');
+  });
+
+  test('empty title after split exits 1 with store message', () => {
+    const res = run(['note', '; just a body']);
+    expect(res.code).toBe(1);
+    expect(res.stderr).toContain('title must not be empty');
+  });
+});

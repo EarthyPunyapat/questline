@@ -30,7 +30,7 @@ import {
   type ActiveMediaSession,
   type PlayerChoice,
 } from './media/session.ts';
-import { cycleTheme } from './ui/theme.ts';
+import { cycleTheme, setInitialTheme } from './ui/theme.ts';
 import { Header } from './ui/layout/Header.tsx';
 import { TaskList } from './ui/layout/TaskList.tsx';
 import { Dailies } from './ui/layout/Dailies.tsx';
@@ -42,17 +42,20 @@ import { StatsView } from './views/StatsView.tsx';
 import { NowPlaying, type PlayerSnapshot } from './ui/layout/NowPlaying.tsx';
 import { Calendar } from './ui/layout/Calendar.tsx';
 import { Notes } from './ui/layout/Notes.tsx';
+import { QuestLibrary } from './ui/layout/QuestLibrary.tsx';
 import { NoteEditor } from './ui/layout/NoteEditor.tsx';
 import { createNote, deleteNote, sortNotes, togglePin, updateNote } from './store/notes.ts';
+import { loadConfig } from './config/loadConfig.ts';
+import { instantiateTemplate, QUEST_TEMPLATES } from './quests/library.ts';
 import type { Note } from './types/state.ts';
 import {
-  POMODORO_SECS,
   POMODORO_XP,
+  sessionSecs,
   isPomodoroComplete,
   tickRemaining,
 } from './pomodoro/logic.ts';
 
-type Mode = 'normal' | 'adding' | 'help' | 'notes';
+type Mode = 'normal' | 'adding' | 'help' | 'notes' | 'library';
 
 export function App(): React.ReactElement {
   const { exit } = useApp();
@@ -103,9 +106,18 @@ export function App(): React.ReactElement {
   // M10: notes overlay — list cursor + open editor ({note} edit, {} new).
   const [noteSel, setNoteSel] = useState(0);
   const [noteEdit, setNoteEdit] = useState<{ note?: Note } | null>(null);
+  // M12/T12.D: quest-library overlay cursor.
+  const [libSel, setLibSel] = useState(0);
   // M10/T10.D: null = no session; remainingSec===0 && !running = finished.
   const [pomo, setPomo] = useState<{ remainingSec: number; running: boolean } | null>(null);
   const pomoAwardedRef = React.useRef(false);
+  // M12/T12.D: validated config read once per mount; also seeds the boot theme
+  // from defaultTheme (unknown ids are no-op safe in ui/theme.ts).
+  const [cfg] = useState(() => {
+    const c = loadConfig();
+    setInitialTheme(c.defaultTheme);
+    return c;
+  });
 
   // M3: resolve a media controller once, then poll snapshots (1s — cheap busctl/dbus reads).
   useEffect(() => {
@@ -165,6 +177,35 @@ export function App(): React.ReactElement {
       persist(next);
     },
     [persist],
+  );
+
+  /** M12/T12.D: expand a library template into a live quest+tasks chain. */
+  const pickTemplate = useCallback(
+    (templateId: string) => {
+      const res = instantiateTemplate(state, templateId);
+      setMode('normal');
+      if ('error' in res) {
+        setFlash({
+          key: Date.now(),
+          text:
+            res.error === 'duplicate'
+              ? 'that quest chain is already active — finish it first'
+              : 'unknown quest template',
+        });
+        return;
+      }
+      commit({
+        ...state,
+        quests: [...state.quests, res.quest],
+        tasks: [...state.tasks, ...res.tasks],
+      });
+      setSelectedId(res.tasks[0]?.id);
+      setFlash({
+        key: Date.now(),
+        text: `⚔ quest added: ${res.quest.title} (+${res.tasks.length} tasks)`,
+      });
+    },
+    [state, commit],
   );
 
   /** Completion pipeline: streak → multiplier → XP → quest bonus → toasts. */
@@ -351,12 +392,19 @@ export function App(): React.ReactElement {
         setNoteSel(0);
         return setMode('notes');
       }
-      // M10/T10.D: start a fresh 25:00 or pause/resume the current one.
+      // M12/T12.D: quest-library overlay — uppercase L only; lowercase l keeps
+      // its calendar month-paging role above.
+      if (input === 'L') {
+        setLibSel(0);
+        return setMode('library');
+      }
+      // M10/T10.D: start a fresh session (config minutes, default 25:00) or
+      // pause/resume the current one.
       if (input === 'p') {
         setPomo((prev) =>
           prev
             ? { ...prev, running: !prev.running && prev.remainingSec > 0 }
-            : { remainingSec: POMODORO_SECS, running: true },
+            : { remainingSec: sessionSecs(cfg.pomodoroMinutes), running: true },
         );
         return;
       }
@@ -412,6 +460,22 @@ export function App(): React.ReactElement {
       }
     },
     { isActive: mode === 'notes' && noteEdit === null },
+  );
+
+  // M12/T12.D: keys for the quest LIBRARY overlay.
+  useInput(
+    (input, key) => {
+      if (input === 'q' || key.escape) return setMode('normal');
+      if (input === 'j' || key.downArrow) {
+        return setLibSel((i) => Math.min(QUEST_TEMPLATES.length - 1, i + 1));
+      }
+      if (input === 'k' || key.upArrow) return setLibSel((i) => Math.max(0, i - 1));
+      if (key.return || input === 'e') {
+        const tpl = QUEST_TEMPLATES[libSel];
+        if (tpl !== undefined) pickTemplate(tpl.id);
+      }
+    },
+    { isActive: mode === 'library' },
   );
 
   return (
@@ -490,6 +554,12 @@ export function App(): React.ReactElement {
             </Text>
           </Box>
         )
+      ) : mode === 'library' ? (
+        <QuestLibrary
+          selectedIndex={libSel}
+          onSelect={pickTemplate}
+          onClose={() => setMode('normal')}
+        />
       ) : (
         <Footer />
       )}

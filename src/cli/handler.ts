@@ -1,4 +1,4 @@
-// Headless CLI subcommands: add | list | done | stats.
+// Headless CLI subcommands: add | list | done | stats | note.
 // Runs BEFORE any ink import/render (SYNC-1 rule) — zero TTY/dbus dependencies.
 // Reuses the exact same domain modules as the TUI so XP/streak math cannot drift.
 import { loadState, saveStateAtomic, statePath } from '../store/persist.ts';
@@ -13,6 +13,7 @@ import { awardDailyBonusIfComplete, ensureDailySet } from '../xp/daily.ts';
 import { applyRecurrenceRollover } from '../xp/recurrence.ts';
 import { evaluateAchievements } from '../xp/achievements.ts';
 import { levelCurve } from '../xp/levels.ts';
+import { createNote } from '../store/notes.ts';
 import { weeklyXp } from '../views/stats.ts';
 import { difficultyTag, formatTaskRow, weeklyChart, xpBar } from './format.ts';
 
@@ -22,7 +23,7 @@ export interface CliOutcome {
   stderr?: string;
 }
 
-const SUBCOMMANDS = new Set(['add', 'list', 'done', 'stats']);
+const SUBCOMMANDS = new Set(['add', 'list', 'done', 'stats', 'note']);
 
 /**
  * Entry gate called by src/index.tsx before flag handling falls through to ink.
@@ -32,7 +33,7 @@ export function dispatchCli(argv: readonly string[]): CliOutcome | undefined {
   const cmd = argv[0];
   if (cmd === undefined || cmd.startsWith('-')) return undefined;
   if (!SUBCOMMANDS.has(cmd)) {
-    return { code: 1, stderr: `questline: unknown command '${cmd}' (try add|list|done|stats)\n` };
+    return { code: 1, stderr: `questline: unknown command '${cmd}' (try add|list|done|stats|note)\n` };
   }
   switch (cmd) {
     case 'add':
@@ -41,6 +42,10 @@ export function dispatchCli(argv: readonly string[]): CliOutcome | undefined {
       return cmdList(argv.slice(1));
     case 'done':
       return cmdDone(argv.slice(1));
+    case 'stats':
+      return cmdStats();
+    case 'note':
+      return cmdNote(argv.slice(1));
     default:
       return cmdStats();
   }
@@ -128,6 +133,27 @@ function cmdAdd(rest: readonly string[]): CliOutcome {
   const t = state.tasks.at(-1)!;
   const dueNote = t.dueDate !== undefined ? ` due ${t.dueDate}` : '';
   return { code: 0, stdout: `added ${t.id} ${t.title} (${t.difficulty})${dueNote}` };
+}
+
+/**
+ * note "<title>[; body]" (S12.D2): create a note via the same store path as
+ * the TUI. Semicolon splits title/body; body optional. Validation errors
+ * (empty title, over-long fields) exit 1 with the store's message.
+ */
+function cmdNote(rest: readonly string[]): CliOutcome {
+  const raw = rest.join(' ').trim();
+  if (raw.length === 0) return usageCli('note requires a quoted "<title>[; body]"');
+  const semi = raw.indexOf(';');
+  const title = semi === -1 ? raw : raw.slice(0, semi).trim();
+  const body = semi === -1 ? '' : raw.slice(semi + 1).trim();
+  try {
+    const next = createNote(bootState(), title, body);
+    saveStateAtomic(next, statePath());
+    const n = next.notes.at(-1)!;
+    return { code: 0, stdout: `note saved ${n.id}` };
+  } catch (err) {
+    return usageCli((err as Error).message);
+  }
 }
 
 /** Regular (non-daily) tasks in display order — the same rows the TUI lists. */

@@ -11,6 +11,7 @@ const ROWS: Array<[string, string]> = [
   ['v', 'toggle stats view'],
   ['c', 'toggle calendar panel'],
   ['N', 'notes (list: n new · enter/e edit · p pin · d delete)'],
+  ['L', 'quest library (j/k select · enter start chain · esc close)'],
   ['p', 'start / pause 25:00 pomodoro (+15 XP once per day)'],
   ['t', 'cycle color theme'],
   ['space', 'play/pause music'],

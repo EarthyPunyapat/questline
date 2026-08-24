@@ -31,6 +31,7 @@ Commands (headless):
   list [--all]                           show open tasks (--all includes done)
   done <list-index | task-id>            complete via the full XP pipeline
   stats                                  level/xp bar/streak/weekly chart
+  note "<title>[; body]"                 create a note (semicolon splits body)
 
 Interactive keys:
   j/k or arrows  move selection     enter   toggle done (XP + streak)
@@ -38,6 +39,7 @@ Interactive keys:
   v              toggle stats      t       cycle theme
   c              calendar (arrows page months)
   N              notes (n new · enter/e edit · p pin · d delete)
+  L              quest library (j/k select · enter start chain)
   p              start/pause pomodoro (25:00 -> +15 XP once/day)
   space          play/pause        n / b   next / previous track
   x              dismiss daily     tab     switch media player (>1 running)
