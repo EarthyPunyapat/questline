@@ -15,6 +15,7 @@ import { evaluateAchievements } from '../xp/achievements.ts';
 import { levelCurve } from '../xp/levels.ts';
 import { createNote } from '../store/notes.ts';
 import { weeklyXp } from '../views/stats.ts';
+import { captureLastCompletion, undoLastCompletion } from '../store/undo.ts';
 import { difficultyTag, formatTaskRow, weeklyChart, xpBar } from './format.ts';
 
 export interface CliOutcome {
@@ -23,7 +24,7 @@ export interface CliOutcome {
   stderr?: string;
 }
 
-const SUBCOMMANDS = new Set(['add', 'list', 'done', 'stats', 'note']);
+const SUBCOMMANDS = new Set(['add', 'list', 'done', 'stats', 'note', 'undo']);
 
 /**
  * Entry gate called by src/index.tsx before flag handling falls through to ink.
@@ -33,7 +34,7 @@ export function dispatchCli(argv: readonly string[]): CliOutcome | undefined {
   const cmd = argv[0];
   if (cmd === undefined || cmd.startsWith('-')) return undefined;
   if (!SUBCOMMANDS.has(cmd)) {
-    return { code: 1, stderr: `questline: unknown command '${cmd}' (try add|list|done|stats|note)\n` };
+    return { code: 1, stderr: `questline: unknown command '${cmd}' (try add|list|done|stats|note|undo)\n` };
   }
   switch (cmd) {
     case 'add':
@@ -42,6 +43,16 @@ export function dispatchCli(argv: readonly string[]): CliOutcome | undefined {
       return cmdList(argv.slice(1));
     case 'done':
       return cmdDone(argv.slice(1));
+    case 'undo': {
+      const st = loadState();
+      const res = undoLastCompletion(st);
+      if (!res.undone) return { code: 0, stdout: 'nothing to undo\n' };
+      saveStateAtomic(res.state);
+      return {
+        code: 0,
+        stdout: `↩ undone: ${res.undone.title} −${res.undone.xpGained}xp\n`,
+      };
+    }
     case 'stats':
       return cmdStats();
     case 'note':
@@ -184,8 +195,8 @@ function cmdDone(rest: readonly string[]): CliOutcome {
 
   const toggled = toggleDone(prev, task.id);
   const next = runCompletionPipeline(toggled, task.id);
-  saveStateAtomic(next, statePath());
   const gained = next.profile.totalXp - prev.profile.totalXp;
+  saveStateAtomic(captureLastCompletion(next, { taskId: task.id, xpGained: gained }), statePath());
   const lvl = levelCurve(next.profile.totalXp).level;
   return {
     code: 0,

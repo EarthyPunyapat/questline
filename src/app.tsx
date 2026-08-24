@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Box, Text, useApp, useInput } from 'ink';
-import { loadState, saveStateAtomic, statePath } from './store/persist.ts';
+import { loadState, saveStateAtomic, statePath, stateDir } from './store/persist.ts';
+import { captureLastCompletion, undoLastCompletion } from './store/undo.ts';
+import { rotateBackups } from './store/backup.ts';
+import { playEvent } from './audio/play.ts';
 import {
   addTask,
   canDelete,
@@ -84,7 +87,25 @@ export function App(): React.ReactElement {
   );
   const [selectedId, setSelectedId] = useState<string | undefined>(() => navOrder[0]?.id);
   const [mode, setMode] = useState<Mode>('normal');
+  // M13/T13.C: one boot-time snapshot per local day (keep 7), before any write.
+  useEffect(() => {
+    try {
+      rotateBackups(stateDir(), new Date().toISOString().slice(0, 10));
+    } catch {
+      /* backups are best-effort */
+    }
+  }, []);
   const [showStats, setShowStats] = useState(false);
+
+  // M13/T13.A: resolved once per mount; playEvent is a silent no-op on failure.
+  const soundEnabled = (() => {
+    try {
+      return loadConfig().sound;
+    } catch {
+      return true;
+    }
+  })();
+  const soundOpts = { enabled: soundEnabled };
   const [, bumpThemeTick] = useState(0);
   const [toast, setToast] = useState<{ key: number; message: string } | null>(null);
   // M9: transient blocker notice (e.g. 'd' on a daily); auto-clears in 2s.
@@ -252,6 +273,17 @@ export function App(): React.ReactElement {
       if (levelAfter > levelBefore) messages.unshift(`LEVEL UP → ${levelAfter}!`);
       const gainedXp = next.profile.totalXp - prev.profile.totalXp;
       messages.push(formatXpGain(gainedXp, mult));
+
+      // M13/T13.C: remember this completion for 'z' undo.
+      next = captureLastCompletion(next, { taskId, xpGained: gainedXp });
+
+      // M13/T13.A: chiptune cues (never throw; config-gated).
+      for (const m of messages) {
+        if (m.startsWith('LEVEL UP')) playEvent('levelUp', soundOpts);
+        else if (m.startsWith('🏆')) playEvent('achievement', soundOpts);
+        else if (m.startsWith('Quest complete')) playEvent('questDone', soundOpts);
+      }
+
       setToast({ key: Date.now(), message: messages.join('  ') });
       return next;
     },
@@ -381,6 +413,16 @@ export function App(): React.ReactElement {
       }
       if (input === '?') return setMode('help');
       if (input === 'v') return setShowStats((s) => !s);
+      // M13/T13.C: reverse the last completion (xp reclaimed; streak untouched).
+      if (input === 'z') {
+        const res = undoLastCompletion(state);
+        if (!res.undone) return setFlash({ key: Date.now(), text: 'nothing to undo' });
+        commit(res.state);
+        return setFlash({
+          key: Date.now(),
+          text: `↩ undone: ${res.undone.title} −${res.undone.xpGained}xp`,
+        });
+      }
       // M10: calendar panel toggle (independent of stats); opens on today.
       if (input === 'c') {
         const d = new Date();

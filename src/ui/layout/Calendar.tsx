@@ -1,7 +1,8 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import type { GameState } from '../../types/state.ts';
-import { buildMonthGrid, dayActivity, monthLabel } from '../../calendar/logic.ts';
+import { buildMonthGrid, dayActivity, monthLabel, toDayISO } from '../../calendar/logic.ts';
+import { xpValue } from '../../types/task.ts';
 import { theme } from '../theme.ts';
 
 interface CalendarProps {
@@ -10,6 +11,8 @@ interface CalendarProps {
   /** 0-11, Date-style. */
   monthIdx: number;
   bordered?: boolean;
+  /** M13/T13.C: ISO date of the navigation cursor; rendered like today. */
+  selectedDay?: string;
 }
 
 const WEEKDAYS = 'Mo Tu We Th Fr Sa Su';
@@ -20,6 +23,7 @@ export function Calendar({
   year,
   monthIdx,
   bordered = false,
+  selectedDay,
 }: CalendarProps): React.ReactElement {
   const grid = buildMonthGrid(year, monthIdx);
   const todayISO = toLocalToday();
@@ -54,7 +58,8 @@ export function Calendar({
               <Box key={ci} width={3}>
                 <Text
                   inverse={cell === todayISO}
-                  bold={hot || cell === todayISO}
+                  bold={hot || cell === todayISO || cell === selectedDay}
+                  underline={cell === selectedDay && cell !== todayISO}
                   color={warm ? theme.accent : hot ? theme.accent : undefined}
                   dimColor={warm && dueCount === 0}
                 >

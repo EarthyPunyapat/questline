@@ -354,3 +354,37 @@ describe('lastPomodoroAwardedAt (M10/T10.D restart guard)', () => {
     expect(loadState(path).profile.lastPomodoroAwardedAt).toBeUndefined();
   });
 });
+
+describe('lastUndo persistence (M13/T13.C, SYNC-14)', () => {
+  test('v4 roundtrip preserves a well-formed undo pointer', () => {
+    const s = defaultState();
+    s.profile.lastUndo = { taskId: 't-abc', xpGained: 30, at: '2026-08-24' };
+    saveStateAtomic(s, path);
+    const loaded = loadState(path);
+    expect(loaded.profile.lastUndo).toEqual({ taskId: 't-abc', xpGained: 30, at: '2026-08-24' });
+  });
+
+  test('absent pointer stays absent; malformed shapes drop to undefined', () => {
+    const s = defaultState();
+    saveStateAtomic(s, path);
+    expect(loadState(path).profile.lastUndo).toBeUndefined();
+
+    const cases = ['42', '"x"', 'null', '{"taskId":7,"xpGained":5,"at":"2026-08-24"}',
+      '{"taskId":"t","xpGained":"5","at":"2026-08-24"}', '{"taskId":"t","xpGained":5}'];
+    for (const [i, shape] of cases.entries()) {
+      const raw = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
+      (raw.profile as Record<string, unknown>).lastUndo = JSON.parse(shape) as unknown;
+      writeFileSync(path, JSON.stringify(raw));
+      expect(loadState(path).profile.lastUndo, `case ${i}`).toBeUndefined();
+    }
+  });
+
+  test('fractional/negative xpGained is floored into a safe integer', () => {
+    const s = defaultState();
+    s.profile.lastUndo = { taskId: 't', xpGained: -7, at: '2026-08-24' };
+    saveStateAtomic(s, path);
+    // Writer stores as-is; reader sanitizes to >=0 so undo can never ADD xp.
+    const loaded = loadState(path);
+    expect(loaded.profile.lastUndo?.xpGained).toBe(0);
+  });
+});

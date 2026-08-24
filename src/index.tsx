@@ -31,6 +31,7 @@ Commands (headless):
   list [--all]                           show open tasks (--all includes done)
   done <list-index | task-id>            complete via the full XP pipeline
   stats                                  level/xp bar/streak/weekly chart
+  undo                                   reverse your last completion (streak kept)
   note "<title>[; body]"                 create a note (semicolon splits body)
 
 Interactive keys:
@@ -38,6 +39,7 @@ Interactive keys:
   a              add task          d       delete selected task
   v              toggle stats      t       cycle theme
   c              calendar (arrows page months)
+  z              undo last completion
   N              notes (n new · enter/e edit · p pin · d delete)
   L              quest library (j/k select · enter start chain)
   p              start/pause pomodoro (25:00 -> +15 XP once/day)

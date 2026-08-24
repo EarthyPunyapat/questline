@@ -8,6 +8,7 @@ const ROWS: Array<[string, string]> = [
   ['a', 'add task (modal)'],
   ['d', 'delete selected task'],
   ['x', 'dismiss selected daily for today'],
+  ['z', 'undo last completion (streak kept)'],
   ['v', 'toggle stats view'],
   ['c', 'toggle calendar panel'],
   ['N', 'notes (list: n new · enter/e edit · p pin · d delete)'],

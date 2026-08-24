@@ -70,6 +70,19 @@ function clone<T>(v: T): T {
   return structuredClone(v);
 }
 
+/** Defensive undo-pointer sanitizer (M13/T13.C, SYNC-14): keep a well-formed
+ * {taskId,xpGained,at} triple, drop anything else rather than crashing undo
+ * on a hand-edited or truncated save. */
+function sanitizeLastUndo(
+  v: unknown,
+): { taskId: string; xpGained: number; at: string } | undefined {
+  if (typeof v !== 'object' || v === null) return undefined;
+  const u = v as Record<string, unknown>;
+  if (typeof u.taskId !== 'string' || typeof u.at !== 'string') return undefined;
+  if (typeof u.xpGained !== 'number' || !Number.isFinite(u.xpGained)) return undefined;
+  return { taskId: u.taskId, xpGained: Math.max(0, Math.floor(u.xpGained)), at: u.at };
+}
+
 function normalize(raw: unknown): GameState | undefined {
   if (typeof raw !== 'object' || raw === null) return undefined;
   const r = raw as Record<string, unknown>;
@@ -99,6 +112,9 @@ function normalize(raw: unknown): GameState | undefined {
       typeof pRaw.lastPomodoroAwardedAt === 'string'
         ? pRaw.lastPomodoroAwardedAt
         : undefined,
+    // Optional undo pointer (M13/T13.B, SYNC-14); absent on old saves,
+    // malformed shapes dropped so a corrupt record can never crash undo.
+    lastUndo: sanitizeLastUndo(pRaw.lastUndo),
   };
   // Older saves predate completedQuestIds → default to [].
   const cqiRaw = r.completedQuestIds;
