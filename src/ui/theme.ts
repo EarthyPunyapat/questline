@@ -40,6 +40,14 @@ export function cycleTheme(): string {
   return THEMES[idx]!.name;
 }
 
+/** Point the singleton at a named palette WITHOUT cycling (M12/T12.A boot
+ * default from config.json). Unknown ids are ignored — no-op safe, so bad
+ * config can never break startup. */
+export function setInitialTheme(id: string): void {
+  const i = THEMES.findIndex((t) => t.name === id);
+  if (i >= 0) idx = i;
+}
+
 export const difficultyColor: Record<'easy' | 'medium' | 'hard', string> = {
   easy: 'green',
   medium: 'yellow',

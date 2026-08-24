@@ -3,6 +3,17 @@
 /** Session length in seconds (25 minutes). */
 export const POMODORO_SECS = 25 * 60;
 
+/** Default focus length in minutes (M12/T12.A); matches config fallback. */
+export const DEFAULT_POMODORO_MINUTES = 25;
+
+/** Session length for a configured duration. Default keeps legacy 25:00 so
+ * existing callers/tests are untouched; integration passes config.pomodoroMinutes.
+ * Integration one-liner: replace `POMODORO_SECS` at app.tsx start sites with
+ * `sessionSecs(cfg.pomodoroMinutes)`. */
+export function sessionSecs(minutes: number = DEFAULT_POMODORO_MINUTES): number {
+  return minutes * 60;
+}
+
 /** Flat XP awarded once per completed session (no multipliers). */
 export const POMODORO_XP = 15;
 

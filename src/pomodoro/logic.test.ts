@@ -4,6 +4,7 @@ import {
   POMODORO_SECS,
   POMODORO_XP,
   fmtClock,
+  sessionSecs,
   isPomodoroComplete,
   tickRemaining,
 } from './logic.ts';
@@ -39,5 +40,14 @@ describe('completion', () => {
     expect(isPomodoroComplete(1)).toBe(false);
     expect(POMODORO_SECS).toBe(1500);
     expect(POMODORO_XP).toBe(15);
+  });
+});
+
+describe('M12/T12.A configured duration', () => {
+  test('sessionSecs defaults to legacy 25:00 and scales minutes', () => {
+    expect(sessionSecs()).toBe(1500);
+    expect(sessionSecs(50)).toBe(3000);
+    expect(sessionSecs(5)).toBe(300);
+    expect(fmtClock(sessionSecs(5))).toBe('05:00');
   });
 });
