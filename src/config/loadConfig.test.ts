@@ -44,14 +44,15 @@ describe('loadConfig', () => {
     expect(threw).toBe(true);
   });
 
-  test('valid file roundtrips all three fields', () => {
+  test('valid file roundtrips all four fields', () => {
     const dir = withFile(
-      '{"pomodoroMinutes":50,"defaultTheme":"ocean","showSeconds":true}',
+      '{"pomodoroMinutes":50,"defaultTheme":"ocean","showSeconds":true,"sound":false}',
     );
     expect(loadConfig(dir)).toEqual({
       pomodoroMinutes: 50,
       defaultTheme: 'ocean',
       showSeconds: true,
+      sound: false,
     });
   });
 
@@ -85,14 +86,22 @@ describe('loadConfig', () => {
     expect(loadConfig(withFile('{"showSeconds":false}')).showSeconds).toBe(false);
   });
 
+  test('sound defaults to true; explicit false survives; bad type falls back', () => {
+    expect(loadConfig(withFile('{}')).sound).toBe(true);
+    expect(loadConfig(withFile('{"sound":false}')).sound).toBe(false);
+    expect(loadConfig(withFile('{"sound":"yes"}')).sound).toBe(true);
+    expect(loadConfig(withFile('{"sound":1}')).sound).toBe(true);
+  });
+
   test('each bad field falls back independently; good neighbors survive', () => {
     const dir = withFile(
-      '{"pomodoroMinutes":0,"defaultTheme":"inferno","showSeconds":"no","extra":1}',
+      '{"pomodoroMinutes":0,"defaultTheme":"inferno","showSeconds":"no","sound":"off","extra":1}',
     );
     expect(loadConfig(dir)).toEqual({
       pomodoroMinutes: 25,
       defaultTheme: 'inferno',
       showSeconds: false,
+      sound: true,
     });
   });
 

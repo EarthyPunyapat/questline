@@ -19,6 +19,7 @@ export const DEFAULT_CONFIG = {
   pomodoroMinutes: 25,
   defaultTheme: THEMES[0]!.name,
   showSeconds: false,
+  sound: true,
 } as const;
 
 export interface QuestlineConfig {
@@ -28,6 +29,8 @@ export interface QuestlineConfig {
   defaultTheme: string;
   /** Render tenths in the header countdown (future use, S12.A2). */
   showSeconds: boolean;
+  /** Event jingle playback (M13/T13.A); false silences playEvent. */
+  sound: boolean;
 }
 
 function fallbackConfig(): QuestlineConfig {
@@ -55,6 +58,10 @@ function parseShowSeconds(v: unknown): boolean {
   return typeof v === 'boolean' ? v : DEFAULT_CONFIG.showSeconds;
 }
 
+function parseSound(v: unknown): boolean {
+  return typeof v === 'boolean' ? v : DEFAULT_CONFIG.sound;
+}
+
 /**
  * Load config.json from `dir` (default: the same XDG dir state.json uses).
  * Missing file, unreadable file, or malformed JSON all yield defaults.
@@ -75,6 +82,7 @@ export function loadConfig(dir: string = stateDir()): QuestlineConfig {
     pomodoroMinutes: parseMinutes(r['pomodoroMinutes']),
     defaultTheme: parseTheme(r['defaultTheme']),
     showSeconds: parseShowSeconds(r['showSeconds']),
+    sound: parseSound(r['sound']),
   };
 }
 
