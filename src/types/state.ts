@@ -21,6 +21,10 @@ export interface Profile {
    * awarded; guards double-award across restarts. Optional like achievements
    * (no schema-version bump needed). */
   lastPomodoroAwardedAt?: string;
+  /** M13/T13.B: the single undoable completion (task id, XP it granted, local
+   * day). Cleared by undo; stale pointers are dropped safely on read.
+   * Optional like the fields above (no schema-version bump needed). */
+  lastUndo?: { taskId: string; xpGained: number; at: string };
 }
 
 /** One day's generated daily-quest set (v2). */
